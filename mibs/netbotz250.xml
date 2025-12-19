@@ -1,0 +1,285 @@
+<APC_DDF
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:noNamespaceSchemaLocation="http://localhost/ddf_schema/apc_ddf_1_6.xsd"
+	ddfid="netbotz250"
+	ddfname="NetBotz 250"
+	ddfversion="5"
+	canremove="yes">
+		 
+	<schemaVersion>1.6</schemaVersion>
+
+	<device deviceid="netbotz250_discovery">
+		<oidMustMatch ruleid="nb250sysid" oid=".1.3.6.1.2.1.1.2.0">
+			<valueList>
+		        <value>.1.3.6.1.4.1.318.1.3.8.5</value>
+    		    <value>.1.3.6.1.4.1.318.1.3.8.5.*</value>
+			</valueList>
+		</oidMustMatch>
+
+        <suppressRule ruleid="suppresscorevendordata" suppressid="core/mib2data/vendordata"/>
+        <suppressRule ruleid="suppresscoremodeldata" suppressid="core/mib2data/modeldata"/>
+        <suppressRule ruleid="suppresscoretypedata" suppressid="core/mib2data/typedata"/>
+
+		<setProductData ruleid="vendordata" field="vendor">Schneider Electric</setProductData>
+		<setProductData ruleid="modeldata" field="model">NetBotz Rack Monitor 250</setProductData>
+		<setProductData ruleid="typedata" field="type">Rack Manager</setProductData>
+	</device>
+
+	<device deviceid="netbotz250_sensors">
+		<oidMustExist ruleid="netbotz_250" oid=".1.3.6.1.4.1.318.1.1.10.5" istree="yes"/> 
+
+		<stateSensor ruleid="wirelessSensorStatusAlarmGeneration" index=".1.3.6.1.4.1.318.1.1.10.5.1.1.1.4">
+            <type>state</type>
+            <sensorId>STATUS_ALARM_GEN_<rowIndex/></sensorId>
+            <value>
+				<mapValue mapid="binaryDefaultZero-vm">
+                <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.4</getRowOid>
+				</mapValue>
+            </value>
+            <label>Alarm Generation - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.3</getRowOid></label>
+            <enum>enabled-em</enum>
+            <sensorSet>Sensor Alarm Status</sensorSet>
+        </stateSensor>
+		<numSensor ruleid="wirelessSensorStatusTemperature" index=".1.3.6.1.4.1.318.1.1.10.5.1.1.1.5">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.5</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>temp</type>
+            <sensorId>STATUS_TEMP_<rowIndex/></sensorId>
+            <value>
+				<if>
+				<op><eq><op><getOid>.1.3.6.1.4.1.318.1.1.10.3.12.11.0</getOid></op><op>2</op></eq></op>
+				<op>
+					<mult>
+					<op>
+						<sub>
+						<op>
+							<mult>
+							<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.5</getRowOid></op>
+							<op>0.1</op>
+							</mult>
+						</op>
+						<op>32</op>
+						</sub>
+					</op>
+					<op><div><op>5</op><op>9</op></div></op>
+					</mult>
+				</op>
+				<op>
+					<mult>
+					<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.5</getRowOid></op>
+					<op>0.1</op>
+					</mult>
+				</op>
+				</if>
+            </value>
+			<valueInc>0.1</valueInc>
+            <label>Temperature - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.3</getRowOid></label>
+            <sensorSet>Temperature Sensors</sensorSet>
+        </numSensor>
+		<numSensor ruleid="wirelessSensorStatusHumidity" index=".1.3.6.1.4.1.318.1.1.10.5.1.1.1.8">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.8</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>humidity</type>
+            <sensorId>STATUS_HUMID_<rowIndex/></sensorId>
+            <value>
+				<mult>
+				<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.8</getRowOid></op>
+				<op>1</op>
+				</mult>
+            </value>
+			<valueInc>1</valueInc>
+            <label>Humidity - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.3</getRowOid></label>
+            <sensorSet>Humidity Sensors</sensorSet>
+        </numSensor>
+		<stateSensor ruleid="wirelessSensorStatusCommStatus" index=".1.3.6.1.4.1.318.1.1.10.5.1.1.1.11">
+            <type>state</type>
+            <sensorId>STATUS_COMM_STATUS_<rowIndex/></sensorId>
+            <value>
+				<mapValue mapid="binaryDefaultZero-vm">
+                <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.11</getRowOid>
+				</mapValue>
+            </value>
+            <label>Comm Status - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.3</getRowOid></label>
+            <enum>active-em</enum>
+            <sensorSet>Sensor Communication Status</sensorSet>
+        </stateSensor>
+		<numSensor ruleid="wirelessSensorStatusBattery" index=".1.3.6.1.4.1.318.1.1.10.5.1.1.1.16">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.16</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>voltageDC</type>
+            <sensorId>STATUS_BATTERY_<rowIndex/></sensorId>
+            <value>
+				<mult>
+				<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.16</getRowOid></op>
+				<op>0.1</op>
+				</mult>
+            </value>
+			<valueInc>0.1</valueInc>
+            <label>Battery - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.3</getRowOid></label>
+            <sensorSet>Wireless Status</sensorSet>
+        </numSensor>
+		<numSensor ruleid="wirelessSensorStatusRssi" index=".1.3.6.1.4.1.318.1.1.10.5.1.1.1.19">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.19</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>pctofcapacity</type>
+            <sensorId>STATUS_RSSI_<rowIndex/></sensorId>
+            <value>
+				<mult>
+				<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.19</getRowOid></op>
+				<op>1</op>
+				</mult>
+            </value>
+			<valueInc>1</valueInc>
+            <label>RSSI - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.1.1.1.3</getRowOid></label>
+            <sensorSet>Wireless Status</sensorSet>
+        </numSensor>
+
+		<stateSensor ruleid="wirelessSensorPodStatusAlarmGeneration" index=".1.3.6.1.4.1.318.1.1.10.5.2.1.1.5">
+            <type>state</type>
+            <sensorId>PODSTATUS_ALARM_GEN_<rowIndex/></sensorId>
+            <value>
+				<mapValue mapid="binaryDefaultZero-vm">
+                <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.5</getRowOid>
+				</mapValue>
+            </value>
+            <label>Alarm Generation - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.4</getRowOid></label>
+            <enum>enabled-em</enum>
+            <sensorSet>Sensor Alarm Status</sensorSet>
+        </stateSensor>
+		<numSensor ruleid="wirelessSensorPodStatusTemperature" index=".1.3.6.1.4.1.318.1.1.10.5.2.1.1.6">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.6</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>temp</type>
+            <sensorId>PODSTATUS_TEMP_<rowIndex/></sensorId>
+            <value>
+				<if>
+				<op><eq><op><getOid>.1.3.6.1.4.1.318.1.1.10.3.12.11.0</getOid></op><op>2</op></eq></op>
+				<op>
+					<mult>
+					<op>
+						<sub>
+						<op>
+							<mult>
+							<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.6</getRowOid></op>
+							<op>0.1</op>
+							</mult>
+						</op>
+						<op>32</op>
+						</sub>
+					</op>
+					<op><div><op>5</op><op>9</op></div></op>
+					</mult>
+				</op>
+				<op>
+					<mult>
+					<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.6</getRowOid></op>
+					<op>0.1</op>
+					</mult>
+				</op>
+				</if>
+            </value>
+			<valueInc>0.1</valueInc>
+            <label>Temperature - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.4</getRowOid></label>
+            <sensorSet>Temperature Sensors</sensorSet>
+        </numSensor>
+		<numSensor ruleid="wirelessSensorPodStatusHumidity" index=".1.3.6.1.4.1.318.1.1.10.5.2.1.1.9">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.9</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>humidity</type>
+            <sensorId>PODSTATUS_HUMID_<rowIndex/></sensorId>
+            <value>
+				<mult>
+				<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.9</getRowOid></op>
+				<op>1</op>
+				</mult>
+            </value>
+			<valueInc>1</valueInc>
+            <label>Humidity - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.4</getRowOid></label>
+            <sensorSet>Humidity Sensors</sensorSet>
+        </numSensor>
+		<stateSensor ruleid="wirelessSensorPodStatusCommStatus" index=".1.3.6.1.4.1.318.1.1.10.5.2.1.1.12">
+            <type>state</type>
+            <sensorId>PODSTATUS_COMM_STATUS_<rowIndex/></sensorId>
+            <value>
+				<mapValue mapid="binaryDefaultZero-vm">
+                <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.12</getRowOid>
+				</mapValue>
+            </value>
+            <label>Comm Status - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.4</getRowOid></label>
+            <enum>active-em</enum>
+            <sensorSet>Sensor Communication Status</sensorSet>
+        </stateSensor>
+		<numSensor ruleid="wirelessSensorPodStatusBattery" index=".1.3.6.1.4.1.318.1.1.10.5.2.1.1.19">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.19</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>voltageDC</type>
+            <sensorId>PODSTATUS_BATTERY_<rowIndex/></sensorId>
+            <value>
+				<mult>
+				<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.19</getRowOid></op>
+				<op>0.1</op>
+				</mult>
+            </value>
+			<valueInc>0.1</valueInc>
+            <label>Battery - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.4</getRowOid></label>
+            <sensorSet>Wireless Status</sensorSet>
+        </numSensor>
+		<numSensor ruleid="wirelessSensorPodStatusRssi" index=".1.3.6.1.4.1.318.1.1.10.5.2.1.1.22">
+			<rowTest>
+				<mapValue mapid="deleteNull-vm">
+				<getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.22</getRowOid>
+				</mapValue>
+			</rowTest>
+            <type>pctofcapacity</type>
+            <sensorId>PODSTATUS_RSSI_<rowIndex/></sensorId>
+            <value>
+				<mult>
+				<op><getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.22</getRowOid></op>
+				<op>1</op>
+				</mult>
+            </value>
+			<valueInc>1</valueInc>
+            <label>RSSI - <getRowOid>.1.3.6.1.4.1.318.1.1.10.5.2.1.1.4</getRowOid></label>
+            <sensorSet>Wireless Status</sensorSet>
+        </numSensor>
+
+		<valueMap ruleid="deleteNull-vm">
+			<valueIn>-1</valueIn><valueOut>[false]</valueOut>
+			<valueIn>*</valueIn><valueOut>[true]</valueOut>
+		</valueMap>
+		<valueMap ruleid="binaryDefaultZero-vm">
+			<valueIn>1</valueIn><valueOut>1</valueOut>
+			<valueIn>*</valueIn><valueOut>0</valueOut>
+		</valueMap>
+		<enumMap ruleid="enabled-em">
+			<label>Disabled</label>
+			<label>Enabled</label>
+		</enumMap>
+		<enumMap ruleid="active-em">
+			<label>Inactive</label>
+			<label>Active</label>
+		</enumMap>
+
+	</device>
+</APC_DDF>

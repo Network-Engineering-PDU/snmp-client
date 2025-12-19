@@ -1,0 +1,15 @@
+Data/*
+Data
+ireasoning/*
+ireasoning
+gw0
+gw0/*
+sensor_list.json
+node_list.csv
+log.txt
+pass
+read
+*.pyc
+build
+ttsnmp.egg-info
+venv
