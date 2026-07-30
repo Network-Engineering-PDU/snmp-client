@@ -97,4 +97,44 @@ Some example commands:
 * `snmpget -v2c -c public localhost .1.3.6.1.4.1.318.1.1.10.5.1.1.1.2.13` Pritns the mac address of the 13th node.
 * `snmpset -v2c -c public localhost .1.3.6.1.4.1.318.1.1.10.5.1.1.1.22.31 string "New location"` Sets new location for the 31st node.
 
+## Network Engineering PDU mode
+
+The `nesnmpd_helper` entry point implements `Nee-MIB` v2.4.19 below
+`.1.3.6.1.4.1.2000.1`. Net-SNMP owns UDP communication and translates
+GETBULK requests into the GETNEXT operations handled by the persistent helper.
+
+The local REST API supplies the system identity, outlet relay/fuse/metering
+state, input phase measurements, model, and licence. The current controller API
+represents one PDU, so only power table 1 and power-summary row 1 are populated.
+The common table code supports four PDU lists when a multi-PDU API is added.
+Environmental table rows are deliberately absent until the hardware service
+provides environmental sensor data.
+
+Writable MIB values:
+
+* Outlet description, low load limit, and high load limit are persisted in
+  `/home/root/snmp/nee_mib_state.json`.
+* Outlet `ON`/`OFF` is forwarded to the real output relay API.
+* PDU name and phase load limits are persisted and used for SNMP alarms.
+* Power-on delay returns `inconsistent-value` because the controller has no
+  power-sequencing API.
+
+Fuse and load notifications are sent as SNMPv2c UDP traps on state transitions.
+The last alarm state is persisted to suppress duplicates across polling cycles.
+Temperature, humidity, wind, and discrete environmental notifications require
+an environmental hardware/API provider.
+
+The default PDU configuration grants read-only access to community `public` and
+write access to community `private`, restricted to the Nee-MIB subtree. The
+configured port, communities, system name/contact/location, and trap managers
+are loaded from the NE API settings when SNMP starts.
+
+Numeric examples:
+
+```console
+snmpget -v2c -c public HOST .1.3.6.1.4.1.2000.1.1.1.0
+snmpwalk -v2c -c public HOST .1.3.6.1.4.1.2000.1
+snmpbulkget -v2c -c public -Cn0 -Cr20 HOST .1.3.6.1.4.1.2000.1.2
+snmpset -v2c -c private HOST .1.3.6.1.4.1.2000.1.2.1.1.6.1 s OFF
+```
 
