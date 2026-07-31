@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from ttsnmp.pdu_backend import PduBackend
+from ttsnmp.pdu_backend import PduApiError, PduBackend
 
 
 class PduBackendTest(unittest.TestCase):
@@ -48,6 +48,7 @@ class PduBackendTest(unittest.TestCase):
         backend._request = mock.Mock(
             side_effect=lambda method, path, payload=None: responses[path]
         )
+        backend._sensor_request = mock.Mock(return_value=[])
         return backend
 
     def test_licensed_pdu_has_summary_without_outlets(self):
@@ -79,6 +80,36 @@ class PduBackendTest(unittest.TestCase):
         ).snapshot()
         self.assertEqual(0, snapshot["summary_count"])
         self.assertEqual([[], [], [], []], snapshot["pdus"])
+
+    def test_subscribed_sensor_maps_to_environment_table_data(self):
+        backend = self.backend_with(license_type="A1")
+        backend._sensor_request.return_value = [{
+            "id": 7,
+            "mac_address": "C2:03:03:00:19:60",
+            "name": "MST01",
+            "last_data": {
+                "temperature": 33.51,
+                "humidity": 61.0,
+                "rssi": -72,
+                "battery": 2.5,
+            },
+        }]
+
+        sensors = backend.snapshot()["sensors"]
+
+        self.assertEqual(1, len(sensors))
+        self.assertEqual("1-S7", sensors[0]["number"])
+        self.assertEqual("Temperature/Humidity", sensors[0]["type"])
+        self.assertEqual("001960", sensors[0]["id"])
+        self.assertEqual(33.51, sensors[0]["temperature"])
+        self.assertEqual(61.0, sensors[0]["humidity"])
+        self.assertIsNone(sensors[0]["wind"])
+
+    def test_sensor_api_failure_produces_no_rows(self):
+        backend = self.backend_with()
+        backend._sensor_request.side_effect = PduApiError("unreachable")
+
+        self.assertEqual([], backend.snapshot()["sensors"])
 
 
 if __name__ == "__main__":
