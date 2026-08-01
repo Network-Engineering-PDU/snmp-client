@@ -94,15 +94,20 @@ class TrapSenderTest(unittest.TestCase):
                 "alarm": True,
                 "manager_1_ip": "192.0.2.1",
                 "manager_2_ip": "192.0.2.1",
-                "manager_3_ip": "not-an-ip",
+                "manager_3_ip": "not a host",
+                "manager_4_ip": "traps.example.test",
             },
             "snmp_v1_v2c": {"read_community": "Public"},
         }
         TrapSender(port=1162).send([event()], settings)
-        self.assertEqual(1, context.sendto.call_count)
-        packet, destination = context.sendto.call_args.args
+        self.assertEqual(2, context.sendto.call_count)
+        packet, destination = context.sendto.call_args_list[0].args
         self.assertIn(b"public", packet)
         self.assertEqual(("192.0.2.1", 1162), destination)
+        self.assertEqual(
+            ("traps.example.test", 1162),
+            context.sendto.call_args_list[1].args[1],
+        )
 
     def test_invalid_community_uses_safe_default(self):
         self.assertEqual(

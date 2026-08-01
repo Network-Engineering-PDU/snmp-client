@@ -106,7 +106,27 @@ class TrapSender:
                     targets.append(normalized)
                     seen.add(normalized)
             except ValueError:
-                logger.warning("Ignoring invalid SNMP trap manager IP: %r", value)
+                hostname = str(value).rstrip(".").lower()
+                labels = hostname.split(".")
+                valid_hostname = (
+                    0 < len(hostname) <= 253
+                    and not all(label.isdigit() for label in labels)
+                    and all(
+                        0 < len(label) <= 63
+                        and re.fullmatch(
+                            r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?",
+                            label,
+                        )
+                        for label in labels
+                    )
+                )
+                if valid_hostname and hostname not in seen:
+                    targets.append(hostname)
+                    seen.add(hostname)
+                elif not valid_hostname:
+                    logger.warning(
+                        "Ignoring invalid SNMP trap manager: %r", value
+                    )
         return targets
 
     @staticmethod
