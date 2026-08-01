@@ -276,6 +276,13 @@ class NeePduOidManagerTest(unittest.TestCase):
         self.assertEqual([(0, False)], self.backend.relay_calls)
         self.assertEqual("OFF", self.value(relay_oid.oid))
 
+        self.backend.data["pdus"][0][0]["relay_writable"] = False
+        self.manager.refresh()
+        self.assertEqual(
+            SnmpSetError.INCONSISTENT_VALUE,
+            self.manager.set(relay_oid, "string", "ON"),
+        )
+
         low_oid = Oid(POWER_OID + ".1.1.8.1")
         high_oid = Oid(POWER_OID + ".1.1.9.1")
         self.assertEqual(

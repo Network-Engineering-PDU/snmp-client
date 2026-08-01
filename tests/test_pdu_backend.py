@@ -74,12 +74,35 @@ class PduBackendTest(unittest.TestCase):
             {"switch_status": False},
         )
 
-    def test_unlicensed_pdu_does_not_expose_metering_tables(self):
-        snapshot = self.backend_with(
+    def test_a1_pdu_keeps_tree_but_marks_metering_unavailable(self):
+        snapshot_backend = self.backend_with(
             license_type="A1", outlet_count=1
+        )
+        snapshot = snapshot_backend.snapshot()
+        self.assertEqual(1, snapshot["summary_count"])
+        self.assertEqual([], snapshot["inputs"])
+        self.assertEqual(1, len(snapshot["pdus"][0]))
+        outlet = snapshot["pdus"][0][0]
+        self.assertIsNone(outlet["data"])
+        self.assertTrue(outlet["on"])
+        self.assertFalse(outlet["relay_writable"])
+        requested_paths = [
+            call.args[1] for call in snapshot_backend._request.call_args_list
+        ]
+        self.assertNotIn("inputs/switches", requested_paths)
+        self.assertFalse(any(
+            path.startswith("inputs/") and path.endswith("/data")
+            for path in requested_paths
+        ))
+
+    def test_b1_pdu_exposes_relay_without_metering(self):
+        snapshot = self.backend_with(
+            license_type="B1", outlet_count=1
         ).snapshot()
-        self.assertEqual(0, snapshot["summary_count"])
-        self.assertEqual([[], [], [], []], snapshot["pdus"])
+        outlet = snapshot["pdus"][0][0]
+        self.assertIsNone(outlet["data"])
+        self.assertTrue(outlet["on"])
+        self.assertTrue(outlet["relay_writable"])
 
     def test_subscribed_sensor_maps_to_environment_table_data(self):
         backend = self.backend_with(license_type="A1")

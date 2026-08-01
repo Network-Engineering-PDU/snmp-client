@@ -104,11 +104,19 @@ The `nesnmpd_helper` entry point implements `Nee-MIB` v2.4.19 below
 GETBULK requests into the GETNEXT operations handled by the persistent helper.
 
 The local REST API supplies the system identity, outlet relay/fuse/metering
-state, input phase measurements, model, and licence. The current controller API
-represents one PDU, so only power table 1 and power-summary row 1 are populated.
-The common table code supports four PDU lists when a multi-PDU API is added.
-Environmental table rows are deliberately absent until the hardware service
-provides environmental sensor data.
+state, input phase measurements, model, licence, and subscribed environmental
+sensors. The current controller API represents one PDU, so only power table 1
+and power-summary row 1 can be populated. The summary row remains present when
+outlets or licensed measurements are unavailable; the MIB value `-1` represents
+unsupported measurements. Outlet rows are created only for outlets reported by
+the controller, and environmental rows only for subscribed sensors. The common
+table code supports four PDU lists when a multi-PDU API is added.
+
+Licence capabilities affect values and write behavior, not the existence of the
+local PDU summary. A1 exposes identity and unavailable measurement values, A2
+adds metering, B1 adds relay state/control, and B2 adds both metering and relay
+control. Relay SET requests on a non-relay licence return
+`inconsistent-value`.
 
 Writable MIB values:
 
@@ -137,4 +145,3 @@ snmpwalk -v2c -c public HOST .1.3.6.1.4.1.2000.1
 snmpbulkget -v2c -c public -Cn0 -Cr20 HOST .1.3.6.1.4.1.2000.1.2
 snmpset -v2c -c private HOST .1.3.6.1.4.1.2000.1.2.1.1.6.1 s OFF
 ```
-

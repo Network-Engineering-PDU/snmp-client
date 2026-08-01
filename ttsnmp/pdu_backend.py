@@ -113,11 +113,13 @@ class PduBackend:
         )
         if not isinstance(license_info, dict):
             license_info = {"type_id": "A1"}
-        snmp_data_licensed = license_info.get("type_id") in ("A2", "B2")
+        license_type = license_info.get("type_id")
+        metering_available = license_type in ("A2", "B2")
+        relay_available = license_type in ("B1", "B2")
         nms = self._optional_get("settings/snmp-nms", {})
         switches = (
             self._optional_get("inputs/switches", {})
-            if snmp_data_licensed else {}
+            if metering_available else {}
         )
         detailed = self._optional_get("network/snmp/detailed-settings", {})
         basic = self._optional_get("network/snmp/settings", {})
@@ -140,15 +142,13 @@ class PduBackend:
         detailed["refresh_period"] = basic.get("refresh_period", 120)
 
         inputs: List[Optional[dict]] = []
-        if snmp_data_licensed:
+        if metering_available:
             for line_id in range(6):
                 inputs.append(self._optional_get(
                     f"inputs/{line_id}/data", None
                 ))
 
-        outlet_metadata = (
-            self._optional_get("outputs/", []) if snmp_data_licensed else []
-        )
+        outlet_metadata = self._optional_get("outputs/", [])
         metadata_by_line = {}
         if isinstance(outlet_metadata, list):
             for item in outlet_metadata:
@@ -165,11 +165,12 @@ class PduBackend:
             configured_outlets = int(pdu_info.get("outlet_count", 0))
         except (TypeError, ValueError):
             configured_outlets = 0
-        outlet_count = min(max(configured_outlets, 0), 24) if (
-            snmp_data_licensed
-        ) else 0
+        outlet_count = min(max(configured_outlets, 0), 24)
         for line_id in range(outlet_count):
-            data = self._optional_get(f"outputs/{line_id}/data", None)
+            data = (
+                self._optional_get(f"outputs/{line_id}/data", None)
+                if metering_available else None
+            )
             status = self._optional_get(
                 f"outputs/{line_id}/switch-status", {}
             )
@@ -186,6 +187,7 @@ class PduBackend:
                 "high_limit": metadata.get("high_limit"),
                 "on": status.get("switch_status")
                 if isinstance(status, dict) else None,
+                "relay_writable": relay_available,
                 "data": data,
             })
 
@@ -195,15 +197,16 @@ class PduBackend:
             "license": license_info,
             "nms": nms,
             "switches": switches,
-            "inputs": inputs if snmp_data_licensed else [],
+            "inputs": inputs,
             # The current hardware API represents one local PDU.  The MIB
             # manager accepts four lists so future controllers can add the
             # remaining units without changing OID logic.
             "pdus": [outlets, [], [], []],
             # A power-summary row represents the PDU itself, not an outlet.
-            # Keep row 1 present for licensed units even when no outlet
-            # modules are currently connected.
-            "summary_count": 1 if snmp_data_licensed else 0,
+            # The local controller is itself PDU row 1. Keep its summary
+            # present even when no outlet modules are installed or licensed;
+            # unsupported measurements are represented by the MIB's -1.
+            "summary_count": 1,
             "sensors": self._map_sensors(sensor_rows),
             "trap_settings": detailed,
         }

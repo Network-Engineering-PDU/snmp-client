@@ -275,8 +275,8 @@ class NeePduOidManager(BaseOidManager):
                 snapshot, pdu_index, source_id, power_desc
             ))
 
-        # Environmental rows are emitted only when a hardware/API provider
-        # supplies them.  No such provider exists in the current repository.
+        # Environmental rows are emitted only for sensors supplied by the
+        # hardware/API provider; absent sensor types are not fabricated.
         for sensor_index, sensor in enumerate(
                 snapshot.get("sensors", [])[:MAX_SENSORS], start=1):
             oids.extend(self._build_sensor(sensor_index, sensor))
@@ -528,6 +528,8 @@ class NeePduOidManager(BaseOidManager):
             normalized = value.upper()
             if normalized not in ("ON", "OFF"):
                 return SnmpSetError.WRONG_VALUE
+            if outlets[index - 1].get("relay_writable") is False:
+                return SnmpSetError.INCONSISTENT_VALUE
             line_id = outlets[index - 1].get("line_id")
             if not isinstance(line_id, int):
                 return SnmpSetError.INCONSISTENT_VALUE
