@@ -1,121 +1,46 @@
 """Implementation of the Network Engineering ``Nee-MIB`` v2.4.19 tree."""
 
-import json
+from bisect import bisect_right
 import logging
-import math
-import os
-import tempfile
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from .base_oid_manager import BaseOidManager
+from .nee_mib_schema import (
+    BASE_OID,
+    EVENTS_OID,
+    MAX_OUTLETS,
+    MAX_PDUS,
+    MAX_SENSORS,
+    OUTLET_LIMIT_COLUMNS,
+    POWER_OID,
+    SENSOR_LIMIT_COLUMNS,
+    SENSOR_LIMITS_BY_KEY,
+    SENSOR_METRICS,
+    SENSOR_OID,
+    SUMMARY_LIMIT_COLUMNS,
+    SYS_OID,
+    UNAVAILABLE,
+    notification_oid,
+    outlet_cell_oid,
+    sensor_cell_oid,
+    summary_cell_oid,
+)
 from .node_table_oid_manager import SnmpSetError
 from .oid import Oid, OidType
 from .pdu_backend import PduApiError, PduBackend
+from .persistent_mib_state import PersistentMibState
+from .mib_values import (
+    display_string as _display,
+    finite_number as _finite_number,
+    scaled_integer as _scaled,
+    stored_integer as _stored_integer,
+    valid_display_string as _valid_display,
+)
 
 
 logger = logging.getLogger(__name__)
-
-BASE_OID = ".1.3.6.1.4.1.2000.1"
-SYS_OID = BASE_OID + ".1"
-POWER_OID = BASE_OID + ".2"
-SENSOR_OID = BASE_OID + ".3.1.1"
-EVENTS_OID = BASE_OID + ".100.1"
-
-MAX_PDUS = 4
-MAX_OUTLETS = 24
-MAX_SENSORS = 32
-UNAVAILABLE = -1
-
-
-def _finite_number(value: Any) -> Optional[float]:
-    if isinstance(value, bool):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    return number if math.isfinite(number) else None
-
-
-def _scaled(value: Any, factor: float, minimum: int, maximum: int) -> int:
-    number = _finite_number(value)
-    if number is None:
-        return UNAVAILABLE
-    result = int(round(number * factor))
-    if result < minimum or result > maximum:
-        return UNAVAILABLE
-    return result
-
-
-def _display(value: Any, maximum: int) -> str:
-    if value is None:
-        return ""
-    # pass_persist values are line-oriented. Keep API and persisted strings
-    # from injecting protocol lines, and enforce the MIB's SIZE in octets.
-    text = str(value).replace("\r", " ").replace("\n", " ").replace("\0", "")
-    encoded = text.encode("utf-8")[:maximum]
-    return encoded.decode("utf-8", errors="ignore")
-
-
-def _valid_display(value: str, maximum: int) -> bool:
-    return (
-        "\r" not in value
-        and "\n" not in value
-        and "\0" not in value
-        and len(value.encode("utf-8")) <= maximum
-    )
-
-
-def _stored_integer(values: Dict[str, Any], key: str, minimum: int,
-                    maximum: int, default: int = UNAVAILABLE) -> int:
-    value = values.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        return default
-    return value if minimum <= value <= maximum else default
-
-
-class PersistentMibState:
-    def __init__(self, path: str):
-        self.path = path
-        self.data: Dict[str, Any] = {
-            "outlets": {},
-            "summary": {},
-            "sensors": {},
-            "alarms": {},
-            "last_event": {},
-        }
-        self.load()
-
-    def load(self) -> None:
-        try:
-            with open(self.path, "r", encoding="utf-8") as state_file:
-                loaded = json.load(state_file)
-            if isinstance(loaded, dict):
-                for key in self.data:
-                    if isinstance(loaded.get(key), dict):
-                        self.data[key] = loaded[key]
-        except (FileNotFoundError, OSError, ValueError):
-            return
-
-    def save(self) -> None:
-        directory = os.path.dirname(self.path) or "."
-        os.makedirs(directory, exist_ok=True)
-        descriptor, temporary_path = tempfile.mkstemp(
-            prefix=".nee-snmp-", dir=directory, text=True
-        )
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as state_file:
-                json.dump(self.data, state_file, sort_keys=True)
-                state_file.flush()
-                os.fsync(state_file.fileno())
-            os.replace(temporary_path, self.path)
-        except Exception:
-            try:
-                os.unlink(temporary_path)
-            except OSError:
-                pass
-            raise
+_MISSING = object()
 
 
 class NeePduOidManager(BaseOidManager):
@@ -126,8 +51,19 @@ class NeePduOidManager(BaseOidManager):
         self.state = PersistentMibState(state_file)
         self.lock = threading.RLock()
         self.oids: List[Oid] = []
+        self._oid_by_key: Dict[Tuple[int, ...], Oid] = {}
+        self._oid_keys: List[Tuple[int, ...]] = []
         self.snapshot: Dict[str, Any] = {}
         self.pending_traps: List[dict] = []
+
+    @staticmethod
+    def _key(oid: Oid) -> Tuple[int, ...]:
+        return tuple(oid.splitted)
+
+    def _replace_oids(self, oids: List[Oid]) -> None:
+        self.oids = sorted(oids)
+        self._oid_keys = [self._key(oid) for oid in self.oids]
+        self._oid_by_key = dict(zip(self._oid_keys, self.oids))
 
     def first_oid(self) -> Optional[Oid]:
         with self.lock:
@@ -139,17 +75,12 @@ class NeePduOidManager(BaseOidManager):
 
     def get(self, oid: Oid) -> Optional[Oid]:
         with self.lock:
-            for candidate in self.oids:
-                if candidate == oid:
-                    return candidate
-        return None
+            return self._oid_by_key.get(self._key(oid))
 
     def get_next_oid(self, oid: Oid) -> Optional[Oid]:
         with self.lock:
-            for candidate in self.oids:
-                if oid < candidate:
-                    return candidate
-        return None
+            index = bisect_right(self._oid_keys, self._key(oid))
+            return self.oids[index] if index < len(self.oids) else None
 
     @staticmethod
     def _oid(path: str, oid_type: OidType, value: Any) -> Oid:
@@ -169,12 +100,11 @@ class NeePduOidManager(BaseOidManager):
         snapshot = self.backend.snapshot()
         with self.lock:
             old_snapshot = self.snapshot
-            new_oids = sorted(self._build_oids(snapshot))
             self.snapshot = snapshot
-            self.oids = new_oids
+            self._replace_oids(self._build_oids(snapshot))
             self.pending_traps = self._detect_traps(old_snapshot, snapshot)
             if self.pending_traps:
-                self.oids = sorted(self._build_oids(snapshot))
+                self._replace_oids(self._build_oids(snapshot))
             return list(self.pending_traps)
 
     def _build_oids(self, snapshot: Dict[str, Any]) -> List[Oid]:
@@ -214,7 +144,6 @@ class NeePduOidManager(BaseOidManager):
             outlets = pdus[pdu_index - 1] if pdu_index <= len(pdus) else []
             for outlet_index, outlet in enumerate(
                     outlets[:MAX_OUTLETS], start=1):
-                base = f"{POWER_OID}.{pdu_index}.1"
                 state_key = f"{pdu_index}.{outlet_index}"
                 saved = self.state.data["outlets"].get(state_key, {})
                 if not isinstance(saved, dict):
@@ -254,9 +183,9 @@ class NeePduOidManager(BaseOidManager):
                     (9, OidType.INTEGER, high),
                 )
                 for column, oid_type, value in values:
-                    oids.append(self._oid(
-                        f"{base}.{column}.{outlet_index}", oid_type, value
-                    ))
+                    oids.append(self._oid(outlet_cell_oid(
+                        pdu_index, column, outlet_index
+                    ), oid_type, value))
 
         summary_count = snapshot.get("summary_count")
         if isinstance(summary_count, bool) or not isinstance(
@@ -368,7 +297,6 @@ class NeePduOidManager(BaseOidManager):
             _scaled(sum(energy_values), 0.01, 0, 2147483647)
             if energy_values else UNAVAILABLE
         )
-        base = POWER_OID + ".5.1"
         power_on_gap = _scaled(
             summary.get("power_on_gap"), 1, 0, 255
         )
@@ -404,9 +332,7 @@ class NeePduOidManager(BaseOidManager):
             (19, OidType.INTEGER, energy_value),
         )
         return [
-            self._oid(
-                f"{base}.{column}.{pdu_index}", oid_type, value
-            )
+            self._oid(summary_cell_oid(column, pdu_index), oid_type, value)
             for column, oid_type, value in values
         ]
 
@@ -414,26 +340,17 @@ class NeePduOidManager(BaseOidManager):
         saved = self.state.data["sensors"].get(str(index), {})
         if not isinstance(saved, dict):
             saved = {}
-        limits = {
-            "temperature_low": (-100, 120),
-            "temperature_high": (-100, 120),
-            "humidity_low": (-1, 100),
-            "humidity_high": (-1, 100),
-            "wind_low": (-1, 100),
-            "wind_high": (-1, 100),
-        }
 
         def sensor_limit(key: str) -> int:
-            minimum, maximum = limits[key]
+            spec = SENSOR_LIMITS_BY_KEY[key]
             if key in saved:
                 return _stored_integer(
-                    saved, key, minimum, maximum
+                    saved, key, spec.minimum, spec.maximum
                 )
             return _scaled(
-                sensor.get(key), 1, minimum, maximum
+                sensor.get(key), 1, spec.minimum, spec.maximum
             )
 
-        base = SENSOR_OID
         values = (
             (1, OidType.INTEGER, index),
             (2, OidType.STRING, _display(sensor.get("number", index), 10)),
@@ -456,7 +373,7 @@ class NeePduOidManager(BaseOidManager):
             (15, OidType.INTEGER, sensor_limit("wind_high")),
         )
         return [
-            self._oid(f"{base}.{column}.{index}", oid_type, value)
+            self._oid(sensor_cell_oid(column, index), oid_type, value)
             for column, oid_type, value in values
         ]
 
@@ -466,8 +383,22 @@ class NeePduOidManager(BaseOidManager):
         except (OSError, TypeError, ValueError):
             logger.exception("Could not persist SNMP MIB state")
             return SnmpSetError.INCONSISTENT_VALUE
-        self.oids = sorted(self._build_oids(self.snapshot))
+        self._replace_oids(self._build_oids(self.snapshot))
         return SnmpSetError.SUCCESS
+
+    def _persist_value(self, state: Dict[str, Any], key: str,
+                       value: Any) -> str:
+        """Persist one writable field and roll back RAM on write failure."""
+        previous = state.get(key, _MISSING)
+        state[key] = value
+        result = self._persist()
+        if result != SnmpSetError.SUCCESS:
+            if previous is _MISSING:
+                state.pop(key, None)
+            else:
+                state[key] = previous
+            self._replace_oids(self._build_oids(self.snapshot))
+        return result
 
     @staticmethod
     def _parse_integer(value: str, minimum: int,
@@ -519,8 +450,7 @@ class NeePduOidManager(BaseOidManager):
                 return SnmpSetError.WRONG_TYPE
             if not _valid_display(value, 30):
                 return SnmpSetError.WRONG_LENGTH
-            state["description"] = value
-            return self._persist()
+            return self._persist_value(state, "description", value)
 
         if column == 6:
             if value_type.lower() != str(OidType.STRING):
@@ -539,35 +469,36 @@ class NeePduOidManager(BaseOidManager):
                 logger.exception("Outlet relay SET failed")
                 return SnmpSetError.INCONSISTENT_VALUE
             outlets[index - 1]["on"] = normalized == "ON"
-            self.oids = sorted(self._build_oids(self.snapshot))
+            self._replace_oids(self._build_oids(self.snapshot))
             return SnmpSetError.SUCCESS
 
-        if column in (8, 9):
+        if column in OUTLET_LIMIT_COLUMNS:
             if value_type.lower() != str(OidType.INTEGER):
                 return SnmpSetError.WRONG_TYPE
-            parsed = self._parse_integer(value, -1, 255)
+            spec = OUTLET_LIMIT_COLUMNS[column]
+            parsed = self._parse_integer(
+                value, spec.minimum, spec.maximum
+            )
             if parsed is None:
                 return SnmpSetError.WRONG_VALUE
-            other_key = "high" if column == 8 else "low"
-            other = state.get(other_key)
+            other = state.get(spec.peer_key)
             if other is None:
-                metadata_key = "high_limit" if column == 8 else "low_limit"
+                metadata_key = spec.peer_key + "_limit"
                 other = _scaled(
                     outlets[index - 1].get(metadata_key), 10, 0, 255
                 )
             if parsed != UNAVAILABLE and other != UNAVAILABLE:
-                if column == 8 and parsed > other:
+                if spec.is_low and parsed > other:
                     return SnmpSetError.INCONSISTENT_VALUE
-                if column == 9 and parsed < other:
+                if not spec.is_low and parsed < other:
                     return SnmpSetError.INCONSISTENT_VALUE
-            state["low" if column == 8 else "high"] = parsed
-            return self._persist()
+            return self._persist_value(state, spec.key, parsed)
         return SnmpSetError.NOT_WRITABLE
 
     def _set_summary(self, column: int, index: int, value_type: str,
                      value: str) -> str:
         if not 1 <= index <= MAX_PDUS or self.get(Oid(
-                f"{POWER_OID}.5.1.1.{index}")) is None:
+                summary_cell_oid(1, index))) is None:
             return SnmpSetError.NOT_WRITABLE
         state = self.state.data["summary"].setdefault(str(index), {})
         if not isinstance(state, dict):
@@ -578,39 +509,29 @@ class NeePduOidManager(BaseOidManager):
                 return SnmpSetError.WRONG_TYPE
             if not _valid_display(value, 30):
                 return SnmpSetError.WRONG_LENGTH
-            state["name"] = value
-            return self._persist()
+            return self._persist_value(state, "name", value)
         if column == 6:
             if value_type.lower() != str(OidType.INTEGER):
                 return SnmpSetError.WRONG_TYPE
             if self._parse_integer(value, -1, 255) is None:
                 return SnmpSetError.WRONG_VALUE
             return SnmpSetError.INCONSISTENT_VALUE
-        limit_keys = {
-            8: ("load_a_low", "load_a_high", True),
-            9: ("load_a_high", "load_a_low", False),
-            11: ("load_b_low", "load_b_high", True),
-            12: ("load_b_high", "load_b_low", False),
-            14: ("load_c_low", "load_c_high", True),
-            15: ("load_c_high", "load_c_low", False),
-        }
-        if column not in limit_keys:
+        if column not in SUMMARY_LIMIT_COLUMNS:
             return SnmpSetError.NOT_WRITABLE
         if value_type.lower() != str(OidType.INTEGER):
             return SnmpSetError.WRONG_TYPE
-        parsed = self._parse_integer(value, -1, 65535)
+        spec = SUMMARY_LIMIT_COLUMNS[column]
+        parsed = self._parse_integer(value, spec.minimum, spec.maximum)
         if parsed is None:
             return SnmpSetError.WRONG_VALUE
-        key, other_key, is_low = limit_keys[column]
         other = _stored_integer(
-            state, other_key, -1, 65535
+            state, spec.peer_key, spec.minimum, spec.maximum
         )
         if parsed != UNAVAILABLE and other != UNAVAILABLE and (
-                (is_low and parsed > other) or
-                (not is_low and parsed < other)):
+                (spec.is_low and parsed > other) or
+                (not spec.is_low and parsed < other)):
             return SnmpSetError.INCONSISTENT_VALUE
-        state[key] = parsed
-        return self._persist()
+        return self._persist_value(state, spec.key, parsed)
 
     def _set_sensor(self, path: str, value_type: str, value: str) -> str:
         suffix = path[len(SENSOR_OID) + 1:].split(".")
@@ -632,38 +553,29 @@ class NeePduOidManager(BaseOidManager):
                 return SnmpSetError.WRONG_TYPE
             if not _valid_display(value, 30):
                 return SnmpSetError.WRONG_LENGTH
-            state["location"] = value
-            return self._persist()
-        limits = {
-            8: ("temperature_low", "temperature_high", -100, 120, True),
-            9: ("temperature_high", "temperature_low", -100, 120, False),
-            11: ("humidity_low", "humidity_high", -1, 100, True),
-            12: ("humidity_high", "humidity_low", -1, 100, False),
-            14: ("wind_low", "wind_high", -1, 100, True),
-            15: ("wind_high", "wind_low", -1, 100, False),
-        }
-        if column not in limits:
+            return self._persist_value(state, "location", value)
+        if column not in SENSOR_LIMIT_COLUMNS:
             return SnmpSetError.NOT_WRITABLE
         if value_type.lower() != str(OidType.INTEGER):
             return SnmpSetError.WRONG_TYPE
-        key, other_key, minimum, maximum, is_low = limits[column]
-        parsed = self._parse_integer(value, minimum, maximum)
+        spec = SENSOR_LIMIT_COLUMNS[column]
+        parsed = self._parse_integer(value, spec.minimum, spec.maximum)
         if parsed is None:
             return SnmpSetError.WRONG_VALUE
         other = _stored_integer(
-            state, other_key, minimum, maximum
+            state, spec.peer_key, spec.minimum, spec.maximum
         )
-        if other == UNAVAILABLE and other_key not in state:
+        if other == UNAVAILABLE and spec.peer_key not in state:
             sensor = sensors[index - 1]
             other = _scaled(
-                sensor.get(other_key), 1, minimum, maximum
+                sensor.get(spec.peer_key), 1,
+                spec.minimum, spec.maximum
             )
         if parsed != UNAVAILABLE and other != UNAVAILABLE and (
-                (is_low and parsed > other) or
-                (not is_low and parsed < other)):
+                (spec.is_low and parsed > other) or
+                (not spec.is_low and parsed < other)):
             return SnmpSetError.INCONSISTENT_VALUE
-        state[key] = parsed
-        return self._persist()
+        return self._persist_value(state, spec.key, parsed)
 
     def _detect_traps(self, old: Dict[str, Any],
                       new: Dict[str, Any]) -> List[dict]:
@@ -671,13 +583,14 @@ class NeePduOidManager(BaseOidManager):
         if not old:
             self._prime_alarm_state(candidates)
             return []
+        previous_alarm_state = dict(self.state.data["alarms"])
         traps: List[dict] = []
         for candidate in candidates:
             traps.extend(self._transition(candidate))
-        if traps:
+        if previous_alarm_state != self.state.data["alarms"]:
             try:
                 self.state.save()
-            except OSError:
+            except (OSError, TypeError, ValueError):
                 logger.exception("Could not persist SNMP alarm state")
         return traps
 
@@ -718,7 +631,7 @@ class NeePduOidManager(BaseOidManager):
                     "key": prefix + ".fuse",
                     "status": fuse_status,
                     "active": ("alarm",),
-                    "notification_oid": f"{EVENTS_OID}.1",
+                    "notification_oid": notification_oid(1),
                     "source": f"Outlet_{pdu_index}_{outlet_index} Fuse",
                     "sensor": "",
                     "value": UNAVAILABLE,
@@ -750,7 +663,7 @@ class NeePduOidManager(BaseOidManager):
                     "key": prefix + ".load",
                     "status": self._threshold_status(load, low, high),
                     "active": ("lower", "higher"),
-                    "notification_oid": f"{EVENTS_OID}.2",
+                    "notification_oid": notification_oid(2),
                     "source": f"Outlet_{pdu_index}_{outlet_index} Load",
                     "sensor": "",
                     "value": load,
@@ -775,43 +688,42 @@ class NeePduOidManager(BaseOidManager):
                 or f"Sensor_{sensor_index}",
                 30,
             )
-            metrics = (
-                ("temperature", 3, 7, -100, 120),
-                ("humidity", 4, 10, 0, 100),
-                ("wind", 5, 13, 0, 100),
-            )
-            for metric, notification, column, minimum, maximum in metrics:
+            for metric in SENSOR_METRICS:
                 value = _scaled(
-                    sensor.get(metric), 1, minimum, maximum
+                    sensor.get(metric.key), 1,
+                    metric.value_minimum, metric.value_maximum
                 )
-                low_key = metric + "_low"
-                high_key = metric + "_high"
-                limit_minimum = -100 if metric == "temperature" else -1
+                low_key = metric.key + "_low"
+                high_key = metric.key + "_high"
                 low = _stored_integer(
-                    saved, low_key, limit_minimum, maximum
+                    saved, low_key, metric.limit_minimum,
+                    metric.value_maximum
                 )
                 high = _stored_integer(
-                    saved, high_key, limit_minimum, maximum
+                    saved, high_key, metric.limit_minimum,
+                    metric.value_maximum
                 )
                 if low_key not in saved:
                     low = _scaled(
-                        sensor.get(low_key), 1, limit_minimum, maximum
+                        sensor.get(low_key), 1, metric.limit_minimum,
+                        metric.value_maximum
                     )
                 if high_key not in saved:
                     high = _scaled(
-                        sensor.get(high_key), 1, limit_minimum, maximum
+                        sensor.get(high_key), 1, metric.limit_minimum,
+                        metric.value_maximum
                     )
                 candidates.append({
-                    "key": f"sensor.{sensor_index}.{metric}",
+                    "key": f"sensor.{sensor_index}.{metric.key}",
                     "status": self._threshold_status(value, low, high),
                     "active": ("lower", "higher"),
-                    "notification_oid": (
-                        f"{EVENTS_OID}.{notification}"
+                    "notification_oid": notification_oid(
+                        metric.notification
                     ),
                     "source": "",
                     "sensor": sensor_desc,
                     "sensor_index": sensor_index,
-                    "metric_column": column,
+                    "metric_column": metric.value_column,
                     "value": value,
                     "low": low,
                     "high": high,
@@ -831,7 +743,7 @@ class NeePduOidManager(BaseOidManager):
                 "key": f"sensor.{sensor_index}.environment",
                 "status": environment_status,
                 "active": ("alarm",),
-                "notification_oid": f"{EVENTS_OID}.6",
+                "notification_oid": notification_oid(6),
                 "source": "",
                 "sensor": sensor_desc,
                 "sensor_index": sensor_index,
@@ -852,7 +764,7 @@ class NeePduOidManager(BaseOidManager):
             )
         try:
             self.state.save()
-        except OSError:
+        except (OSError, TypeError, ValueError):
             logger.exception("Could not persist initial alarm state")
 
     def _transition(self, candidate: dict) -> List[dict]:

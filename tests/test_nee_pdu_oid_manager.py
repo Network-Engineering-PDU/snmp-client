@@ -1,6 +1,8 @@
 import copy
 import io
+import json
 import os
+import stat
 import tempfile
 import unittest
 from unittest import mock
@@ -164,6 +166,13 @@ class NeePduOidManagerTest(unittest.TestCase):
         self.assertEqual(SYS_OID + ".1.0", first.oid)
         next_after_system = self.manager.get_next_oid(Oid(SYS_OID + ".8.0"))
         self.assertEqual(POWER_OID + ".1.1.1.1", next_after_system.oid)
+
+    def test_indexed_get_accepts_equivalent_oid_and_stops_after_last(self):
+        equivalent = Oid(SYS_OID + ".01.0")
+        self.assertEqual(
+            "ABCDEF1234", self.manager.get(equivalent).value
+        )
+        self.assertIsNone(self.manager.get_next_oid(self.manager.last_oid()))
 
     def test_mib_column_types_and_access_permissions(self):
         self.backend.data["sensors"] = [{
@@ -358,6 +367,18 @@ class NeePduOidManagerTest(unittest.TestCase):
         replacement = NeePduOidManager(self.backend, self.state_path)
         replacement.refresh()
         self.assertEqual("PDU Alpha", replacement.get(oid).value)
+        self.assertEqual(
+            0o600, stat.S_IMODE(os.stat(self.state_path).st_mode)
+        )
+
+    def test_failed_state_write_rolls_back_in_memory_value(self):
+        oid = Oid(POWER_OID + ".1.1.3.1")
+        original = self.value(oid.oid)
+        with mock.patch.object(
+                self.manager.state, "save", side_effect=OSError("disk full")):
+            result = self.manager.set(oid, "string", "Not persisted")
+        self.assertEqual(SnmpSetError.INCONSISTENT_VALUE, result)
+        self.assertEqual(original, self.value(oid.oid))
 
     def test_power_on_gap_validates_type_and_reports_missing_api(self):
         oid = Oid(POWER_OID + ".5.1.6.1")
@@ -446,6 +467,9 @@ class NeePduOidManagerTest(unittest.TestCase):
         self.assertEqual(1, len(self.manager.refresh()))
         self.backend.data["pdus"][0][0]["data"]["fuse"] = 1
         self.assertEqual([], self.manager.refresh())
+        with open(self.state_path, "r", encoding="utf-8") as state_file:
+            state = json.load(state_file)
+        self.assertEqual("normal", state["alarms"]["outlet.1.1.fuse"])
 
     def test_alarm_duplicate_is_suppressed_after_manager_restart(self):
         self.backend.data["pdus"][0][0]["data"]["fuse"] = 2
@@ -476,7 +500,7 @@ class NeePduOidManagerTest(unittest.TestCase):
             "low": "invalid",
             "high": 9999,
         }
-        self.manager.oids = sorted(
+        self.manager._replace_oids(
             self.manager._build_oids(self.manager.snapshot)
         )
         self.assertEqual("-1", self.value(POWER_OID + ".1.1.8.1"))

@@ -12,7 +12,8 @@ import socket
 import time
 from typing import Dict, Iterable, List, Tuple
 
-from .nee_pdu_oid_manager import SENSOR_OID, SYS_OID, _display
+from .mib_values import display_string
+from .nee_mib_schema import SENSOR_OID, SYS_OID
 
 
 logger = logging.getLogger(__name__)
@@ -154,13 +155,14 @@ class TrapSender:
             else event.get("sensor", "")
         )
         varbinds = [
-            (description_oid, 0x04, _display(description, 30).encode()),
+            (description_oid, 0x04,
+             display_string(description, 30).encode()),
             (SYS_OID + ".2.0", 0x04,
-             _display(event.get("power_desc", ""), 30).encode()),
+             display_string(event.get("power_desc", ""), 30).encode()),
             (SYS_OID + ".1.0", 0x04,
-             _display(event.get("source_id", ""), 10).encode()),
+             display_string(event.get("source_id", ""), 10).encode()),
             (SYS_OID + ".5.0", 0x04,
-             _display(event.get("status", ""), 30).encode()),
+             display_string(event.get("status", ""), 30).encode()),
         ]
         if notification == 2:
             varbinds.extend([
