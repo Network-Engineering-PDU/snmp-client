@@ -73,6 +73,10 @@ class NeePduOidManager(BaseOidManager):
         self._oid_keys: List[Tuple[int, ...]] = []
         self.snapshot: Dict[str, Any] = {}
         self.pending_traps: List[dict] = []
+        # Net-SNMP starts pass_persist helpers on the first enterprise
+        # request. Expose a structurally valid tree immediately so that the
+        # request is not held up by the initial REST/hardware refresh.
+        self._replace_oids(self._build_oids(self.snapshot))
 
     @staticmethod
     def _key(oid: Oid) -> Tuple[int, ...]:

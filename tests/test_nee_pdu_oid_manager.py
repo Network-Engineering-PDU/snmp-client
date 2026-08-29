@@ -150,6 +150,14 @@ class NeePduOidManagerTest(unittest.TestCase):
         self.assertEqual(BASE_OID + ".6", EVENTS_OID)
         self.assertEqual(DEVICE_OID + ".1.0", self.manager.first_oid().oid)
 
+    def test_placeholder_tree_exists_before_initial_backend_refresh(self):
+        cold_manager = NeePduOidManager(mock.Mock(), self.state_path + ".cold")
+
+        product_name = cold_manager.get(Oid(DEVICE_OID + ".1.0"))
+        self.assertIsNotNone(product_name)
+        self.assertEqual("", product_name.value)
+        self.assertIsNotNone(cold_manager.get_next_oid(Oid(BASE_OID)))
+
     def test_device_identity_and_scaling(self):
         self.assertEqual("NET-POWER", self.value(DEVICE_OID + ".1.0"))
         self.assertEqual("ABCDEF1234", self.value(DEVICE_OID + ".3.0"))

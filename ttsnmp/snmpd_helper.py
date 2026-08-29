@@ -22,9 +22,6 @@ GW_APP_SOCKET = "/tmp/ttgw_snmp.socket"
 SOCKET_READ_PERIOD = 120
 NODE_CSV_FILE = "/home/root/snmp/node_list.csv"
 NEE_STATE_FILE = "/home/root/snmp/nee_mib_state.json"
-INITIAL_DATA_TIMEOUT = 20
-
-
 class SnmpdHelper:
     def __init__(self):
         self.fixed_manager = FixedOidManager()
@@ -112,8 +109,6 @@ class SnmpdHelper:
         print(line, flush=True)
 
     def get_and_print(self, oid: Oid) -> None:
-        if self.nee_manager is not None:
-            self.update_attempted.wait(INITIAL_DATA_TIMEOUT)
         result = self.fixed_manager.get(oid)
         if result is None and self.nee_manager is not None:
             result = self.nee_manager.get(oid)
@@ -128,8 +123,6 @@ class SnmpdHelper:
         self.print(result.value)
 
     def get_next_oid(self, oid: Oid) -> Oid:
-        if self.nee_manager is not None:
-            self.update_attempted.wait(INITIAL_DATA_TIMEOUT)
         candidates = [self.fixed_manager.get_next_oid(oid)]
         if self.nee_manager is not None:
             candidates.append(self.nee_manager.get_next_oid(oid))
@@ -169,13 +162,16 @@ class SnmpdHelper:
                         self.get_and_print(oid)
 
                 elif "set" == line:
-                    if self.nee_manager is not None:
-                        self.update_attempted.wait(INITIAL_DATA_TIMEOUT)
                     oid_str = self.input()
                     oid = Oid(oid_str)
                     _type, value = self.input().split(" ", 1)
                     value = value.strip("\"")
-                    if self.nee_manager is not None:
+                    if (self.nee_manager is not None and
+                            not self.update_attempted.is_set()):
+                        # Writes require a hardware snapshot for validation,
+                        # but must fail promptly rather than timing out.
+                        self.print("resource-unavailable")
+                    elif self.nee_manager is not None:
                         self.print(self.nee_manager.set(oid, _type, value))
                     elif self.node_table_manager is not None:
                         self.print(self.node_table_manager.set(
