@@ -1,0 +1,1292 @@
+Nee-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-TYPE, NOTIFICATION-TYPE, enterprises, Integer32
+        FROM SNMPv2-SMI
+    DisplayString
+        FROM SNMPv2-TC;
+
+neE OBJECT IDENTIFIER ::= { enterprises 2000 }
+
+nee MODULE-IDENTITY
+    LAST-UPDATED "202608290000Z"
+    ORGANIZATION "Network Engineering"
+    CONTACT-INFO "PDU Engineering"
+    DESCRIPTION
+        "NET-POWER PDU v2.4.20 device, input, outlet, sensor, communication
+         and notification objects.  All product groups begin at branch 1.
+         A measured value
+         of -2147483648 means that the value is unavailable unless an object
+         description specifies another unavailable value.  Authentication
+         passwords and SNMP community strings are intentionally excluded."
+    REVISION "202608290000Z"
+    DESCRIPTION
+        "NET-POWER PDU v2.4.20 definition: device identity, two power
+         inputs, per-phase measurements, complete outlet data, MST01 sensors,
+         and communication status/configuration."
+    ::= { neE 1 }
+
+npDevice        OBJECT IDENTIFIER ::= { nee 1 }
+npInputPower    OBJECT IDENTIFIER ::= { nee 2 }
+npOutlet        OBJECT IDENTIFIER ::= { nee 3 }
+npSensor        OBJECT IDENTIFIER ::= { nee 4 }
+npCommunication OBJECT IDENTIFIER ::= { nee 5 }
+npNotifications OBJECT IDENTIFIER ::= { nee 6 }
+
+-- Device identity ----------------------------------------------------------
+
+npProductName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Product name."
+    ::= { npDevice 1 }
+
+npPartNumber OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Product part number."
+    ::= { npDevice 2 }
+
+npSerialNumber OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Product serial number."
+    ::= { npDevice 3 }
+
+npControllerModel OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "PDU controller model."
+    ::= { npDevice 4 }
+
+npPduType OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "PDU product type."
+    ::= { npDevice 5 }
+
+npRatedCurrent OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of an ampere"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "PDU rated current; -2147483648 is unavailable."
+    ::= { npDevice 6 }
+
+npOutletCount OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Number of locally installed outlets."
+    ::= { npDevice 7 }
+
+npLicenseType OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Installed PDU feature licence, for example A1, A2, B1 or B2."
+    ::= { npDevice 8 }
+
+npSoftwareVersion OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Controller software version."
+    ::= { npDevice 9 }
+
+npOutputModuleVersion OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Output module firmware version."
+    ::= { npDevice 10 }
+
+npPowerBoardVersion OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Power measurement board firmware version."
+    ::= { npDevice 11 }
+
+npUptimeText OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Human-readable controller uptime.  sysUpTime remains available."
+    ::= { npDevice 12 }
+
+npLanMacAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "MAC address reported by the active LAN interface."
+    ::= { npDevice 13 }
+
+npCurrentIpAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Current controller IP address."
+    ::= { npDevice 14 }
+
+npSystemName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured NMS system name."
+    ::= { npDevice 15 }
+
+npSystemContact OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured NMS contact."
+    ::= { npDevice 16 }
+
+npSystemLocation OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured NMS location."
+    ::= { npDevice 17 }
+
+-- Power inputs -------------------------------------------------------------
+
+npInputTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF NpInputEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION
+        "Installed input branches.  Input 1 is Main and input 2 is Auxiliary."
+    ::= { npInputPower 1 }
+
+npInputEntry OBJECT-TYPE
+    SYNTAX NpInputEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Configuration and totals for one power input."
+    INDEX { npInputIndex }
+    ::= { npInputTable 1 }
+
+NpInputEntry ::= SEQUENCE {
+    npInputIndex              Integer32,
+    npInputName               DisplayString,
+    npInputPresent            INTEGER,
+    npInputSystemType         INTEGER,
+    npInputPhaseCount         Integer32,
+    npInputNeutralPresent     INTEGER,
+    npInputCurrentSensorType  INTEGER,
+    npInputTotalActivePower   Integer32,
+    npInputTotalEnergy        Integer32
+}
+
+npInputIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..2)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Power input index."
+    ::= { npInputEntry 1 }
+
+npInputName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..16))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Main or Auxiliary."
+    ::= { npInputEntry 2 }
+
+npInputPresent OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether this input is installed."
+    ::= { npInputEntry 3 }
+
+npInputSystemType OBJECT-TYPE
+    SYNTAX INTEGER {
+        unknown(0),
+        singlePhase(1),
+        biPhase(2),
+        threePhaseWithoutNeutral(3),
+        threePhaseWithNeutral(4)
+    }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Electrical system type configured by the power board switches."
+    ::= { npInputEntry 4 }
+
+npInputPhaseCount OBJECT-TYPE
+    SYNTAX Integer32 (0..3)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Number of active phases for this input."
+    ::= { npInputEntry 5 }
+
+npInputNeutralPresent OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether the configured system includes neutral."
+    ::= { npInputEntry 6 }
+
+npInputCurrentSensorType OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), hallSensor(1), currentTransformer(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Current measurement technology selected by hardware."
+    ::= { npInputEntry 7 }
+
+npInputTotalActivePower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a watt"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Sum of active power over this input's phases."
+    ::= { npInputEntry 8 }
+
+npInputTotalEnergy OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a watt-hour"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Sum of accumulated energy over this input's phases."
+    ::= { npInputEntry 9 }
+
+npInputPhaseTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF NpInputPhaseEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Per-phase electrical measurements for each installed input."
+    ::= { npInputPower 2 }
+
+npInputPhaseEntry OBJECT-TYPE
+    SYNTAX NpInputPhaseEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "One input and phase measurement row."
+    INDEX { npPhaseInputIndex, npInputPhaseIndex }
+    ::= { npInputPhaseTable 1 }
+
+NpInputPhaseEntry ::= SEQUENCE {
+    npPhaseInputIndex       Integer32,
+    npInputPhaseIndex       Integer32,
+    npInputPhaseName        DisplayString,
+    npInputVoltage          Integer32,
+    npInputCurrent          Integer32,
+    npInputActivePower      Integer32,
+    npInputReactivePower    Integer32,
+    npInputApparentPower    Integer32,
+    npInputPowerFactor      Integer32,
+    npInputPhaseAngle       Integer32,
+    npInputFrequency        Integer32,
+    npInputEnergy           Integer32
+}
+
+npPhaseInputIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..2)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Input index component of the phase row index."
+    ::= { npInputPhaseEntry 1 }
+
+npInputPhaseIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..3)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase index: 1=L1, 2=L2 and 3=L3."
+    ::= { npInputPhaseEntry 2 }
+
+npInputPhaseName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..4))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase name."
+    ::= { npInputPhaseEntry 3 }
+
+npInputVoltage OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a volt"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "RMS phase voltage."
+    ::= { npInputPhaseEntry 4 }
+
+npInputCurrent OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "milliamperes"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "RMS phase current."
+    ::= { npInputPhaseEntry 5 }
+
+npInputActivePower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a watt"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase active power."
+    ::= { npInputPhaseEntry 6 }
+
+npInputReactivePower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a var"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase reactive power; the value may be negative."
+    ::= { npInputPhaseEntry 7 }
+
+npInputApparentPower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a volt-ampere"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase apparent power."
+    ::= { npInputPhaseEntry 8 }
+
+npInputPowerFactor OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "thousandths"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Phase power factor; 1000 represents 1.000."
+    ::= { npInputPhaseEntry 9 }
+
+npInputPhaseAngle OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a degree"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Voltage-current phase angle."
+    ::= { npInputPhaseEntry 10 }
+
+npInputFrequency OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "hundredths of a hertz"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Line frequency."
+    ::= { npInputPhaseEntry 11 }
+
+npInputEnergy OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a watt-hour"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Accumulated phase energy."
+    ::= { npInputPhaseEntry 12 }
+
+npInputCount OBJECT-TYPE
+    SYNTAX Integer32 (0..2)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Number of installed power inputs."
+    ::= { npInputPower 3 }
+
+-- Complete outlet table ----------------------------------------------------
+
+npOutletTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF NpOutletEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Complete data for each installed PDU outlet."
+    ::= { npOutlet 1 }
+
+npOutletEntry OBJECT-TYPE
+    SYNTAX NpOutletEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "One outlet row."
+    INDEX { npOutletIndex }
+    ::= { npOutletTable 1 }
+
+NpOutletEntry ::= SEQUENCE {
+    npOutletIndex                   Integer32,
+    npOutletName                    DisplayString,
+    npOutletConnector               DisplayString,
+    npOutletFuseState               INTEGER,
+    npOutletSwitchState             INTEGER,
+    npOutletVoltage                 Integer32,
+    npOutletCurrent                 Integer32,
+    npOutletActivePower             Integer32,
+    npOutletReactivePower           Integer32,
+    npOutletApparentPower           Integer32,
+    npOutletPowerFactor             Integer32,
+    npOutletPhaseAngle              Integer32,
+    npOutletFrequency               Integer32,
+    npOutletEnergy                  Integer32,
+    npOutletCurrentLowLimit         Integer32,
+    npOutletCurrentHighLimit        Integer32,
+    npOutletRelayControlAvailable   INTEGER,
+    npOutletMeteringAvailable       INTEGER
+}
+
+npOutletIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..24)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet index."
+    ::= { npOutletEntry 1 }
+
+npOutletName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..30))
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Persistent outlet description."
+    ::= { npOutletEntry 2 }
+
+npOutletConnector OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..32))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Detected socket/connector type."
+    ::= { npOutletEntry 3 }
+
+npOutletFuseState OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), normal(1), alarm(2), unavailable(3) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet fuse state."
+    ::= { npOutletEntry 4 }
+
+npOutletSwitchState OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), on(1), off(2) }
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION
+        "Outlet relay state.  SET accepts on(1) or off(2) only and succeeds
+         only when the installed licence permits relay control."
+    ::= { npOutletEntry 5 }
+
+npOutletVoltage OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a volt"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet voltage."
+    ::= { npOutletEntry 6 }
+
+npOutletCurrent OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "milliamperes"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet current."
+    ::= { npOutletEntry 7 }
+
+npOutletActivePower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a watt"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet active power."
+    ::= { npOutletEntry 8 }
+
+npOutletReactivePower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a var"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet reactive power."
+    ::= { npOutletEntry 9 }
+
+npOutletApparentPower OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a volt-ampere"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet apparent power."
+    ::= { npOutletEntry 10 }
+
+npOutletPowerFactor OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "thousandths"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet power factor; 1000 represents 1.000."
+    ::= { npOutletEntry 11 }
+
+npOutletPhaseAngle OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a degree"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet voltage-current phase angle."
+    ::= { npOutletEntry 12 }
+
+npOutletFrequency OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "hundredths of a hertz"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet frequency."
+    ::= { npOutletEntry 13 }
+
+npOutletEnergy OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of a watt-hour"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Accumulated outlet energy."
+    ::= { npOutletEntry 14 }
+
+npOutletCurrentLowLimit OBJECT-TYPE
+    SYNTAX Integer32 (-1..255)
+    UNITS "tenths of an ampere"
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Outlet low-current alarm limit; -1 is unavailable."
+    ::= { npOutletEntry 15 }
+
+npOutletCurrentHighLimit OBJECT-TYPE
+    SYNTAX Integer32 (-1..255)
+    UNITS "tenths of an ampere"
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Outlet high-current alarm limit; -1 is unavailable."
+    ::= { npOutletEntry 16 }
+
+npOutletRelayControlAvailable OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether relay control is permitted by the installed licence."
+    ::= { npOutletEntry 17 }
+
+npOutletMeteringAvailable OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether outlet metering data is available."
+    ::= { npOutletEntry 18 }
+
+-- MST01 sensor table
+
+npSensorTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF NpSensorEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Subscribed environmental sensors."
+    ::= { npSensor 1 }
+
+npSensorEntry OBJECT-TYPE
+    SYNTAX NpSensorEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "One subscribed sensor row."
+    INDEX { npSensorIndex }
+    ::= { npSensorTable 1 }
+
+NpSensorEntry ::= SEQUENCE {
+    npSensorIndex               Integer32,
+    npSensorApiId               Integer32,
+    npSensorMacAddress          DisplayString,
+    npSensorName                DisplayString,
+    npSensorType                DisplayString,
+    npSensorLocation            DisplayString,
+    npSensorTemperature         Integer32,
+    npSensorTemperatureLowLimit Integer32,
+    npSensorTemperatureHighLimit Integer32,
+    npSensorHumidity            Integer32,
+    npSensorHumidityLowLimit    Integer32,
+    npSensorHumidityHighLimit   Integer32,
+    npSensorRssi                Integer32,
+    npSensorBatteryMv           Integer32,
+    npSensorDataTime            DisplayString
+}
+
+npSensorIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..32)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "SNMP sensor index."
+    ::= { npSensorEntry 1 }
+
+npSensorApiId OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Local sensor subscription identifier."
+    ::= { npSensorEntry 2 }
+
+npSensorMacAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..32))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Sensor Bluetooth MAC address."
+    ::= { npSensorEntry 3 }
+
+npSensorName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured sensor name."
+    ::= { npSensorEntry 4 }
+
+npSensorType OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Detected sensor type, for example MST01."
+    ::= { npSensorEntry 5 }
+
+npSensorLocation OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..30))
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Persistent sensor location."
+    ::= { npSensorEntry 6 }
+
+npSensorTemperature OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "hundredths of a degree Celsius"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Sensor temperature."
+    ::= { npSensorEntry 7 }
+
+npSensorTemperatureLowLimit OBJECT-TYPE
+    SYNTAX Integer32 (-10000..12000)
+    UNITS "hundredths of a degree Celsius"
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Persistent low temperature alarm limit."
+    ::= { npSensorEntry 8 }
+
+npSensorTemperatureHighLimit OBJECT-TYPE
+    SYNTAX Integer32 (-10000..12000)
+    UNITS "hundredths of a degree Celsius"
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Persistent high temperature alarm limit."
+    ::= { npSensorEntry 9 }
+
+npSensorHumidity OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "tenths of percent relative humidity"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Sensor relative humidity."
+    ::= { npSensorEntry 10 }
+
+npSensorHumidityLowLimit OBJECT-TYPE
+    SYNTAX Integer32 (-1..1000)
+    UNITS "tenths of percent relative humidity"
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Persistent low humidity alarm limit; -1 is unavailable."
+    ::= { npSensorEntry 11 }
+
+npSensorHumidityHighLimit OBJECT-TYPE
+    SYNTAX Integer32 (-1..1000)
+    UNITS "tenths of percent relative humidity"
+    MAX-ACCESS read-write
+    STATUS current
+    DESCRIPTION "Persistent high humidity alarm limit; -1 is unavailable."
+    ::= { npSensorEntry 12 }
+
+npSensorRssi OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "dBm"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth received signal strength."
+    ::= { npSensorEntry 13 }
+
+npSensorBatteryMv OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "millivolts"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Sensor battery voltage."
+    ::= { npSensorEntry 14 }
+
+npSensorDataTime OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..40))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Timestamp of the stored sensor reading."
+    ::= { npSensorEntry 15 }
+
+-- Communications ----------------------------------------------------------
+
+npNetwork       OBJECT IDENTIFIER ::= { npCommunication 1 }
+npServices      OBJECT IDENTIFIER ::= { npCommunication 2 }
+npSnmpConfig    OBJECT IDENTIFIER ::= { npCommunication 3 }
+npModbus        OBJECT IDENTIFIER ::= { npCommunication 4 }
+npNtp           OBJECT IDENTIFIER ::= { npCommunication 5 }
+npWebEmail      OBJECT IDENTIFIER ::= { npCommunication 6 }
+npBluetooth     OBJECT IDENTIFIER ::= { npCommunication 7 }
+
+npNetworkConnected OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Overall network connectivity state."
+    ::= { npNetwork 1 }
+
+npNetworkMode OBJECT-TYPE
+    SYNTAX INTEGER {
+        unknown(-1), singleLan(0), wifiOnly(1), dualLan(2), lanAndWifi(3)
+    }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured network operating mode."
+    ::= { npNetwork 2 }
+
+npDhcpEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "DHCP state for the primary configuration."
+    ::= { npNetwork 3 }
+
+npPreferredEthernet OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Preferred/active Ethernet interface, eth1=LAN1 and eth0=LAN2."
+    ::= { npNetwork 4 }
+
+npPrimaryIpAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Primary IPv4 address."
+    ::= { npNetwork 5 }
+
+npSubnetMask OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Primary IPv4 subnet mask."
+    ::= { npNetwork 6 }
+
+npDefaultGateway OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Primary IPv4 default gateway."
+    ::= { npNetwork 7 }
+
+npDnsServers OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured DNS server list."
+    ::= { npNetwork 8 }
+
+npLan1IpAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "LAN1 IPv4 address."
+    ::= { npNetwork 9 }
+
+npLan1Gateway OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "LAN1 independent IPv4 gateway."
+    ::= { npNetwork 10 }
+
+npLan2IpAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "LAN2 IPv4 address."
+    ::= { npNetwork 11 }
+
+npLan2Gateway OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "LAN2 independent IPv4 gateway."
+    ::= { npNetwork 12 }
+
+npWifiIpAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Wi-Fi IPv4 address."
+    ::= { npNetwork 13 }
+
+npWifiSsid OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured Wi-Fi SSID; the password is never exposed."
+    ::= { npNetwork 14 }
+
+npEthernetMacAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "MAC address of the selected Ethernet interface."
+    ::= { npNetwork 15 }
+
+npWifiMacAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..128))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Wi-Fi MAC address."
+    ::= { npNetwork 16 }
+
+npSshServiceEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "SSH service state."
+    ::= { npServices 1 }
+
+npSnmpServiceEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "SNMP service state."
+    ::= { npServices 2 }
+
+npModbusServiceEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Modbus service state."
+    ::= { npServices 3 }
+
+npSnmpEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "SNMP service state."
+    ::= { npSnmpConfig 1 }
+
+npSnmpVersion OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), v1(1), v2c(2), v3(3) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Selected SNMP protocol version."
+    ::= { npSnmpConfig 2 }
+
+npSnmpPort OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "SNMP UDP listening port."
+    ::= { npSnmpConfig 3 }
+
+npSnmpSetEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether SNMP SET access is enabled."
+    ::= { npSnmpConfig 4 }
+
+npSnmpTrapsEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether SNMP alarm traps are enabled."
+    ::= { npSnmpConfig 5 }
+
+npSnmpV3User OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "SNMPv3 USM user name; no password is exposed."
+    ::= { npSnmpConfig 6 }
+
+npSnmpV3SecurityLevel OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), noAuthNoPriv(1), authNoPriv(2), authPriv(3) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SNMPv3 security level."
+    ::= { npSnmpConfig 7 }
+
+npSnmpV3AccessRight OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), readOnly(1), readWrite(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SNMPv3 access right."
+    ::= { npSnmpConfig 8 }
+
+npSnmpV3AuthAlgorithm OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), md5(1), sha(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SNMPv3 authentication algorithm."
+    ::= { npSnmpConfig 9 }
+
+npSnmpV3PrivacyAlgorithm OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), des(1), aes(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SNMPv3 privacy algorithm."
+    ::= { npSnmpConfig 10 }
+
+npSnmpV3Configured OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether an SNMPv3 user is configured."
+    ::= { npSnmpConfig 11 }
+
+npTrapManagerTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF NpTrapManagerEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "The four configured SNMP trap destinations."
+    ::= { npSnmpConfig 20 }
+
+npTrapManagerEntry OBJECT-TYPE
+    SYNTAX NpTrapManagerEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "One trap manager slot."
+    INDEX { npTrapManagerIndex }
+    ::= { npTrapManagerTable 1 }
+
+NpTrapManagerEntry ::= SEQUENCE {
+    npTrapManagerIndex   Integer32,
+    npTrapManagerName    DisplayString,
+    npTrapManagerAddress DisplayString
+}
+
+npTrapManagerIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..4)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Trap manager slot."
+    ::= { npTrapManagerEntry 1 }
+
+npTrapManagerName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Trap manager display name."
+    ::= { npTrapManagerEntry 2 }
+
+npTrapManagerAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..253))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Trap manager IPv4 address or DNS name."
+    ::= { npTrapManagerEntry 3 }
+
+npModbusEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Modbus service state."
+    ::= { npModbus 1 }
+
+npModbusUnitAddress OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured Modbus unit/slave address."
+    ::= { npModbus 2 }
+
+npModbusTcpPort OBJECT-TYPE
+    SYNTAX Integer32 (1..65535)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Modbus TCP port; currently 502."
+    ::= { npModbus 3 }
+
+npModbusRtuBaudRate OBJECT-TYPE
+    SYNTAX Integer32
+    UNITS "bits per second"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active Modbus RTU baud rate; currently 115200."
+    ::= { npModbus 4 }
+
+npModbusRtuParity OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), none(1), even(2), odd(3) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active Modbus RTU parity."
+    ::= { npModbus 5 }
+
+npModbusRtuDataBits OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active Modbus RTU data bits; currently 8."
+    ::= { npModbus 6 }
+
+npModbusRtuStopBits OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Active Modbus RTU stop bits; currently 1."
+    ::= { npModbus 7 }
+
+npNtpEnabled OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "NTP/SNTP configuration state."
+    ::= { npNtp 1 }
+
+npNtpServer OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..253))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured NTP server."
+    ::= { npNtp 2 }
+
+npNtpTimeOffset OBJECT-TYPE
+    SYNTAX Integer32 (-12..12)
+    UNITS "hours"
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured display time offset."
+    ::= { npNtp 3 }
+
+npNtpRunning OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether the NTP service is running."
+    ::= { npNtp 4 }
+
+npNtpSynchronized OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether the controller clock is synchronized."
+    ::= { npNtp 5 }
+
+npWebProtocol OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), http(1), https(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured web protocol."
+    ::= { npWebEmail 1 }
+
+npWebPort OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured web service port."
+    ::= { npWebEmail 2 }
+
+npSmtpServer OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..253))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SMTP server."
+    ::= { npWebEmail 3 }
+
+npSmtpPort OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SMTP port."
+    ::= { npWebEmail 4 }
+
+npSmtpAuthMode OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), none(1), login(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured SMTP authentication mode."
+    ::= { npWebEmail 5 }
+
+npEmailFromAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..254))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Configured sender address."
+    ::= { npWebEmail 6 }
+
+npEmailPasswordConfigured OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Whether an SMTP password exists; the password is never exposed."
+    ::= { npWebEmail 7 }
+
+npEmailRecipientTable OBJECT-TYPE
+    SYNTAX SEQUENCE OF NpEmailRecipientEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "Configured email alarm recipients."
+    ::= { npWebEmail 20 }
+
+npEmailRecipientEntry OBJECT-TYPE
+    SYNTAX NpEmailRecipientEntry
+    MAX-ACCESS not-accessible
+    STATUS current
+    DESCRIPTION "One configured recipient."
+    INDEX { npEmailRecipientIndex }
+    ::= { npEmailRecipientTable 1 }
+
+NpEmailRecipientEntry ::= SEQUENCE {
+    npEmailRecipientIndex   Integer32,
+    npEmailRecipientAddress DisplayString
+}
+
+npEmailRecipientIndex OBJECT-TYPE
+    SYNTAX Integer32 (1..3)
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Email recipient slot."
+    ::= { npEmailRecipientEntry 1 }
+
+npEmailRecipientAddress OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..254))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Email recipient address."
+    ::= { npEmailRecipientEntry 2 }
+
+npBluetoothControllerMac OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth controller MAC address."
+    ::= { npBluetooth 1 }
+
+npBluetoothName OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..64))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth controller name."
+    ::= { npBluetooth 2 }
+
+npBluetoothPowered OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth controller power state."
+    ::= { npBluetooth 3 }
+
+npBluetoothPairable OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth pairable state."
+    ::= { npBluetooth 4 }
+
+npBluetoothDiscoverable OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth discoverable state."
+    ::= { npBluetooth 5 }
+
+npBluetoothDiscovering OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Bluetooth scan state."
+    ::= { npBluetooth 6 }
+
+npBluetoothDeviceCount OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Number of known Bluetooth devices returned by the controller."
+    ::= { npBluetooth 7 }
+
+-- Notification context and supported alarms
+
+npEventContext OBJECT IDENTIFIER ::= { npNotifications 10 }
+
+npEventSourceId OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..10))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Serial/source identifier for the most recent alarm."
+    ::= { npEventContext 1 }
+
+npEventProductDescription OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..30))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "PDU name associated with the most recent alarm."
+    ::= { npEventContext 2 }
+
+npEventSource OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..30))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Outlet source associated with the most recent alarm."
+    ::= { npEventContext 3 }
+
+npEventSensor OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..30))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "MST01 sensor associated with the most recent alarm."
+    ::= { npEventContext 4 }
+
+npEventStatus OBJECT-TYPE
+    SYNTAX DisplayString (SIZE (0..30))
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Alarm status: lower, higher, or alarm."
+    ::= { npEventContext 5 }
+
+npEventValue OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Most recent alarm value using the source object's scale."
+    ::= { npEventContext 6 }
+
+npEventLowLimit OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "Low limit associated with the most recent alarm."
+    ::= { npEventContext 7 }
+
+npEventHighLimit OBJECT-TYPE
+    SYNTAX Integer32
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION "High limit associated with the most recent alarm."
+    ::= { npEventContext 8 }
+
+npFuseEvent NOTIFICATION-TYPE
+    OBJECTS {
+        npEventSource, npEventProductDescription, npEventSourceId,
+        npEventStatus
+    }
+    STATUS current
+    DESCRIPTION "An installed outlet fuse entered its alarm state."
+    ::= { npNotifications 1 }
+
+npLoadEvent NOTIFICATION-TYPE
+    OBJECTS {
+        npEventSource, npEventProductDescription, npEventSourceId,
+        npEventStatus, npEventValue, npEventLowLimit, npEventHighLimit
+    }
+    STATUS current
+    DESCRIPTION "An installed outlet current crossed a configured limit."
+    ::= { npNotifications 2 }
+
+npTemperatureEvent NOTIFICATION-TYPE
+    OBJECTS {
+        npEventSensor, npEventProductDescription, npEventSourceId,
+        npEventStatus, npEventValue, npEventLowLimit, npEventHighLimit
+    }
+    STATUS current
+    DESCRIPTION "An MST01 temperature crossed a configured limit."
+    ::= { npNotifications 3 }
+
+npHumidityEvent NOTIFICATION-TYPE
+    OBJECTS {
+        npEventSensor, npEventProductDescription, npEventSourceId,
+        npEventStatus, npEventValue, npEventLowLimit, npEventHighLimit
+    }
+    STATUS current
+    DESCRIPTION "An MST01 humidity value crossed a configured limit."
+    ::= { npNotifications 4 }
+
+END

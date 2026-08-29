@@ -52,7 +52,7 @@ class TrapSenderTest(unittest.TestCase):
                 load_packet,
             )
 
-        for notification, column in ((3, 7), (4, 10), (5, 13)):
+        for notification, column in ((3, 7), (4, 10)):
             sensor_event = {
                 **event(notification),
                 "source": "",
@@ -72,19 +72,8 @@ class TrapSenderTest(unittest.TestCase):
                     packet,
                 )
 
-        environment_packet = TrapSender().build_packet(
-            "public",
-            {
-                **event(6),
-                "source": "",
-                "sensor": "Door sensor",
-                "sensor_index": 1,
-            },
-        )
-        self.assertIn(
-            _object_identifier_value(SYS_OID + ".4.0"),
-            environment_packet,
-        )
+        with self.assertRaises(ValueError):
+            TrapSender().build_packet("public", event(5))
 
     @mock.patch("ttsnmp.trap_sender.socket.socket")
     def test_sends_one_udp_datagram_per_valid_target(self, socket_factory):

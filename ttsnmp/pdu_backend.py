@@ -23,7 +23,7 @@ class PduApiError(RuntimeError):
 class PduBackend:
     def __init__(self, base_url: str = "http://localhost:8001",
                  sensor_base_url: str = "http://localhost:8000/api",
-                 timeout: float = 3.0):
+                 timeout: float = 10.0):
         self.base_url = base_url.rstrip("/")
         self.sensor_base_url = sensor_base_url.rstrip("/")
         self.timeout = timeout
@@ -66,10 +66,26 @@ class PduBackend:
             logger.warning("%s", exc)
             return default
 
-    @staticmethod
-    def _map_sensors(sensor_rows: Any) -> List[dict]:
-        if not isinstance(sensor_rows, list):
+    def _map_sensors(self, sensor_rows: Any) -> List[dict]:
+        if not isinstance(sensor_rows, list) or not sensor_rows:
             return []
+
+        live_response = self._optional_sensor_get("sensors-scan/live/", {})
+        live_devices = (
+            live_response.get("devices", [])
+            if isinstance(live_response, dict) else []
+        )
+        live_by_mac = {}
+        if isinstance(live_devices, list):
+            for device in live_devices:
+                if not isinstance(device, dict):
+                    continue
+                live_mac = "".join(
+                    char for char in str(device.get("mac", ""))
+                    if char.isalnum()
+                ).upper()
+                if live_mac:
+                    live_by_mac[live_mac] = device
 
         sensors = []
         for index, row in enumerate(sensor_rows[:32], start=1):
@@ -78,30 +94,80 @@ class PduBackend:
             readings = row.get("last_data")
             if not isinstance(readings, dict):
                 readings = {}
+            mac_address = str(row.get("mac_address", ""))
             mac = "".join(
                 char for char in str(row.get("mac_address", ""))
                 if char.isalnum()
             ).upper()
+            live = live_by_mac.get(mac, {})
             sensor_id = mac[-6:]
             api_id = row.get("id", index)
+            temperature = live.get(
+                "temperature_c", readings.get("temperature")
+            )
+            humidity = live.get("humidity_pct", readings.get("humidity"))
+            rssi = live.get("rssi", readings.get("rssi"))
+            battery_mv = live.get("battery_mv")
+            if battery_mv is None:
+                battery = readings.get("battery")
+                try:
+                    battery_number = float(battery)
+                    battery_mv = round(
+                        battery_number * 1000
+                        if abs(battery_number) < 20 else battery_number
+                    )
+                except (TypeError, ValueError):
+                    battery_mv = None
             sensor_type = (
-                "Temperature/Humidity"
-                if (readings.get("temperature") is not None
-                    or readings.get("humidity") is not None)
+                str(live.get("kind")) if live.get("kind") else
+                "MST01" if (temperature is not None or humidity is not None)
                 else str(row.get("name") or "Sensor")
             )
             sensors.append({
                 "number": f"{index}-S{api_id}",
+                "api_id": api_id,
                 "type": sensor_type,
                 "id": sensor_id,
+                "mac": mac_address.upper(),
                 "location": "",
                 "value": "",
                 "description": str(row.get("name") or sensor_id),
-                "temperature": readings.get("temperature"),
-                "humidity": readings.get("humidity"),
-                "wind": None,
+                "name": str(row.get("name") or sensor_id),
+                "temperature": temperature,
+                "humidity": humidity,
+                "rssi": rssi,
+                "battery_mv": battery_mv,
+                "data_datetime": readings.get("data_datetime", ""),
             })
         return sensors
+
+    @staticmethod
+    def _safe_snmp_settings(detailed: dict, services: dict) -> dict:
+        """Return only non-secret SNMP configuration for MIB exposure."""
+        trap = detailed.get("trap")
+        trap = trap if isinstance(trap, dict) else {}
+        v3 = detailed.get("snmp_v3")
+        v3 = v3 if isinstance(v3, dict) else {}
+        return {
+            "enabled": services.get("snmp"),
+            "port": detailed.get("port"),
+            "version": detailed.get("version"),
+            "set_enabled": detailed.get("set_enabled"),
+            "traps_enabled": trap.get("alarm"),
+            "trap_managers": [
+                {
+                    "name": trap.get(f"manager_{index}_name"),
+                    "address": trap.get(f"manager_{index}_ip"),
+                }
+                for index in range(1, 5)
+            ],
+            "v3_user": v3.get("usm_user"),
+            "v3_security_level": v3.get("security_level"),
+            "v3_access_right": v3.get("access_right"),
+            "v3_auth_algorithm": v3.get("auth_algorithm"),
+            "v3_privacy_algorithm": v3.get("privacy_algorithm"),
+            "v3_configured": bool(v3.get("usm_user")),
+        }
 
     def snapshot(self) -> Dict[str, Any]:
         system = self._request("GET", "settings/system-info")
@@ -117,17 +183,32 @@ class PduBackend:
         metering_available = license_type in ("A2", "B2")
         relay_available = license_type in ("B1", "B2")
         nms = self._optional_get("settings/snmp-nms", {})
-        switches = (
-            self._optional_get("inputs/switches", {})
-            if metering_available else {}
-        )
+        # Input topology is part of the PDU identity and is useful even on a
+        # licence that does not expose electrical metering.
+        switches = self._optional_get("inputs/switches", {})
         detailed = self._optional_get("network/snmp/detailed-settings", {})
         basic = self._optional_get("network/snmp/settings", {})
+        network = self._optional_get("network/interfaces", {})
+        network_info = self._optional_get("network/info", {})
+        services = self._optional_get("network/services", {})
+        ntp = self._optional_get("settings/ntp", {})
+        modbus = self._optional_get("settings/modbus", {})
+        email_web = self._optional_get("email-web", {})
+        bluetooth = self._optional_get("settings/bluetooth", {})
         sensor_rows = self._optional_sensor_get("sensors-data/", [])
         nms = nms if isinstance(nms, dict) else {}
         switches = switches if isinstance(switches, dict) else {}
         detailed = detailed if isinstance(detailed, dict) else {}
         basic = basic if isinstance(basic, dict) else {}
+        network = network if isinstance(network, dict) else {}
+        network_info = (
+            network_info if isinstance(network_info, dict) else {}
+        )
+        services = services if isinstance(services, dict) else {}
+        ntp = ntp if isinstance(ntp, dict) else {}
+        modbus = modbus if isinstance(modbus, dict) else {}
+        email_web = email_web if isinstance(email_web, dict) else {}
+        bluetooth = bluetooth if isinstance(bluetooth, dict) else {}
         trap = detailed.get("trap")
         if not isinstance(trap, dict):
             trap = {}
@@ -208,6 +289,27 @@ class PduBackend:
             # unsupported measurements are represented by the MIB's -1.
             "summary_count": 1,
             "sensors": self._map_sensors(sensor_rows),
+            "communications": {
+                "network": network,
+                "network_info": network_info,
+                "services": services,
+                "snmp": self._safe_snmp_settings(detailed, services),
+                "ntp": ntp,
+                "modbus": modbus,
+                "email_web": email_web,
+                # Pairing passkeys and other transient secrets are never
+                # copied into the SNMP snapshot.
+                "bluetooth": {
+                    "controller_mac": bluetooth.get("controller_mac"),
+                    "name": bluetooth.get("name"),
+                    "powered": bluetooth.get("powered"),
+                    "pairable": bluetooth.get("pairable"),
+                    "discoverable": bluetooth.get("discoverable"),
+                    "discovering": bluetooth.get("discovering"),
+                    "device_count": len(bluetooth.get("devices", []))
+                    if isinstance(bluetooth.get("devices"), list) else None,
+                },
+            },
             "trap_settings": detailed,
         }
 

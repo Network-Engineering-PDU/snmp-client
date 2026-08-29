@@ -22,7 +22,7 @@ GW_APP_SOCKET = "/tmp/ttgw_snmp.socket"
 SOCKET_READ_PERIOD = 120
 NODE_CSV_FILE = "/home/root/snmp/node_list.csv"
 NEE_STATE_FILE = "/home/root/snmp/nee_mib_state.json"
-INITIAL_DATA_TIMEOUT = 10
+INITIAL_DATA_TIMEOUT = 20
 
 
 class SnmpdHelper:

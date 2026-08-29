@@ -26,6 +26,58 @@ class PduBackendTest(unittest.TestCase):
                 "trap_alarm": True,
                 "refresh_period": 60,
             },
+            "network/interfaces": {
+                "type": 1,
+                "dhcp": False,
+                "params": {
+                    "ip": "192.168.1.100",
+                    "subnet_mask": "255.255.255.0",
+                    "gateway_ip": "192.168.1.1",
+                    "dns": "8.8.8.8",
+                    "ssid": "",
+                },
+                "eth_interface": "eth1",
+                "nw_mode": 2,
+                "lan1_ip": "192.168.1.100",
+                "lan1_gateway": "192.168.1.1",
+                "lan2_ip": "192.168.2.100",
+                "lan2_gateway": "192.168.2.1",
+                "wifi_ip": "",
+                "ethernet_mac": "00:11:22:33:44:55",
+                "wifi_mac": "00:11:22:33:44:66",
+            },
+            "network/info": {"connected": True},
+            "network/services": {
+                "ssh": True, "snmp": True, "modbus": True,
+            },
+            "settings/ntp": {
+                "enabled": True,
+                "server": "pool.ntp.org",
+                "time_offset": 2,
+                "running": True,
+                "synchronized": True,
+            },
+            "settings/modbus": {"addr": 125},
+            "email-web": {
+                "web_protocol": "https",
+                "web_port": 443,
+                "smtp_server": "smtp.example.com",
+                "smtp_port": 587,
+                "smtp_auth": "login",
+                "from_address": "pdu@example.com",
+                "password_configured": True,
+                "recipients": ["noc@example.com"],
+            },
+            "settings/bluetooth": {
+                "controller_mac": "AA:BB:CC:DD:EE:FF",
+                "name": "NET-POWER",
+                "powered": True,
+                "pairable": False,
+                "discoverable": False,
+                "discovering": False,
+                "pairing_passkey": "must-not-leak",
+                "devices": [{"mac": "11:22:33:44:55:66"}],
+            },
             "outputs/": [{
                 "line_id": 1,
                 "name": "Outlet one",
@@ -89,7 +141,7 @@ class PduBackendTest(unittest.TestCase):
         requested_paths = [
             call.args[1] for call in snapshot_backend._request.call_args_list
         ]
-        self.assertNotIn("inputs/switches", requested_paths)
+        self.assertIn("inputs/switches", requested_paths)
         self.assertFalse(any(
             path.startswith("inputs/") and path.endswith("/data")
             for path in requested_paths
@@ -106,27 +158,85 @@ class PduBackendTest(unittest.TestCase):
 
     def test_subscribed_sensor_maps_to_environment_table_data(self):
         backend = self.backend_with(license_type="A1")
-        backend._sensor_request.return_value = [{
+        stored = [{
             "id": 7,
             "mac_address": "C2:03:03:00:19:60",
             "name": "MST01",
             "last_data": {
+                "data_datetime": "2026-08-29T20:00:00Z",
                 "temperature": 33.51,
                 "humidity": 61.0,
+                "pressure": 1012.4,
                 "rssi": -72,
                 "battery": 2.5,
             },
         }]
+        backend._sensor_request.side_effect = lambda method, path, payload=None: (
+            stored if path == "sensors-data/" else {
+                "devices": [{
+                    "mac": "C2:03:03:00:19:60",
+                    "kind": "MST01",
+                    "temperature_c": 34.25,
+                    "humidity_pct": 62.0,
+                    "pressure_hpa": 1013.2,
+                    "rssi": -70,
+                    "battery_mv": 2510,
+                    "battery_pct": 83,
+                }]
+            }
+        )
 
         sensors = backend.snapshot()["sensors"]
 
         self.assertEqual(1, len(sensors))
         self.assertEqual("1-S7", sensors[0]["number"])
-        self.assertEqual("Temperature/Humidity", sensors[0]["type"])
+        self.assertEqual("MST01", sensors[0]["type"])
         self.assertEqual("001960", sensors[0]["id"])
-        self.assertEqual(33.51, sensors[0]["temperature"])
-        self.assertEqual(61.0, sensors[0]["humidity"])
-        self.assertIsNone(sensors[0]["wind"])
+        self.assertEqual(34.25, sensors[0]["temperature"])
+        self.assertEqual(62.0, sensors[0]["humidity"])
+        self.assertEqual(-70, sensors[0]["rssi"])
+        self.assertEqual(2510, sensors[0]["battery_mv"])
+        self.assertNotIn("pressure", sensors[0])
+        self.assertNotIn("battery_pct", sensors[0])
+        self.assertNotIn("wind", sensors[0])
+
+    def test_communications_are_whitelisted_and_secrets_are_excluded(self):
+        backend = self.backend_with()
+        detailed = {
+            "port": 161,
+            "version": "V3",
+            "set_enabled": True,
+            "snmp_v1_v2c": {
+                "read_community": "secret-read",
+                "write_community": "secret-write",
+            },
+            "snmp_v3": {
+                "usm_user": "operator",
+                "security_level": "authPriv",
+                "access_right": "readWrite",
+                "auth_algorithm": "SHA",
+                "auth_pwd": "secret-auth",
+                "privacy_algorithm": "AES",
+                "privacy_pwd": "secret-priv",
+            },
+            "trap": {"alarm": True, "manager_1_ip": "192.0.2.10"},
+        }
+        original = backend._request.side_effect
+        backend._request.side_effect = lambda method, path, payload=None: (
+            detailed if path == "network/snmp/detailed-settings"
+            else original(method, path, payload)
+        )
+
+        communications = backend.snapshot()["communications"]
+        rendered = repr(communications)
+
+        self.assertEqual("V3", communications["snmp"]["version"])
+        self.assertEqual("operator", communications["snmp"]["v3_user"])
+        self.assertNotIn("secret-read", rendered)
+        self.assertNotIn("secret-write", rendered)
+        self.assertNotIn("secret-auth", rendered)
+        self.assertNotIn("secret-priv", rendered)
+        self.assertNotIn("must-not-leak", rendered)
 
     def test_sensor_api_failure_produces_no_rows(self):
         backend = self.backend_with()

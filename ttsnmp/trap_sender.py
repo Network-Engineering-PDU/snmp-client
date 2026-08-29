@@ -144,8 +144,8 @@ class TrapSender:
     @staticmethod
     def _event_varbinds(event: dict) -> List[Tuple[str, int, bytes]]:
         notification = int(event["notification_oid"].rsplit(".", 1)[1])
-        if notification not in range(1, 7):
-            raise ValueError("Unsupported Nee-MIB notification")
+        if notification not in range(1, 5):
+            raise ValueError("Unsupported NET-POWER PDU notification")
         description_oid = (
             SYS_OID + ".3.0" if notification in (1, 2)
             else SYS_OID + ".4.0"
@@ -173,10 +173,10 @@ class TrapSender:
                 (SYS_OID + ".8.0", 0x02,
                  _integer_bytes(int(event.get("high", -1)))),
             ])
-        elif notification in (3, 4, 5):
+        elif notification in (3, 4):
             sensor_index = int(event["sensor_index"])
             metric_column = int(event["metric_column"])
-            expected_column = {3: 7, 4: 10, 5: 13}[notification]
+            expected_column = {3: 7, 4: 10}[notification]
             if (
                     not 1 <= sensor_index <= 32
                     or metric_column != expected_column):

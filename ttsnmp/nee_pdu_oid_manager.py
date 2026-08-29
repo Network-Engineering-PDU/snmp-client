@@ -1,4 +1,4 @@
-"""Implementation of the Network Engineering ``Nee-MIB`` v2.4.19 tree."""
+"""Implementation of the NET-POWER PDU MIB v2.4.20 tree."""
 
 from bisect import bisect_right
 import logging
@@ -8,23 +8,41 @@ from typing import Any, Dict, List, Optional, Tuple
 from .base_oid_manager import BaseOidManager
 from .nee_mib_schema import (
     BASE_OID,
+    BLUETOOTH_OID,
+    DEVICE_OID,
     EVENTS_OID,
+    INPUT_OID,
     MAX_OUTLETS,
     MAX_PDUS,
     MAX_SENSORS,
+    MODBUS_OID,
+    NATIVE_OUTLET_OID,
+    NATIVE_SENSOR_OID,
+    NATIVE_UNAVAILABLE,
+    NETWORK_OID,
+    NTP_OID,
     OUTLET_LIMIT_COLUMNS,
     POWER_OID,
     SENSOR_LIMIT_COLUMNS,
     SENSOR_LIMITS_BY_KEY,
     SENSOR_METRICS,
     SENSOR_OID,
+    SERVICE_OID,
+    SNMP_CONFIG_OID,
     SUMMARY_LIMIT_COLUMNS,
     SYS_OID,
     UNAVAILABLE,
+    WEB_EMAIL_OID,
+    email_recipient_cell_oid,
+    input_cell_oid,
+    input_phase_cell_oid,
+    native_outlet_cell_oid,
+    native_sensor_cell_oid,
     notification_oid,
     outlet_cell_oid,
     sensor_cell_oid,
     summary_cell_oid,
+    trap_manager_cell_oid,
 )
 from .node_table_oid_manager import SnmpSetError
 from .oid import Oid, OidType
@@ -96,6 +114,24 @@ class NeePduOidManager(BaseOidManager):
             path, OidType.STRING, _display(value, maximum)
         )
 
+    @staticmethod
+    def _truth(value: Any) -> int:
+        if value is True:
+            return 1
+        if value is False:
+            return 2
+        return 0
+
+    @staticmethod
+    def _native_scaled(value: Any, factor: float,
+                       minimum: int = -2147483647,
+                       maximum: int = 2147483647) -> int:
+        number = _finite_number(value)
+        if number is None:
+            return NATIVE_UNAVAILABLE
+        scaled = int(round(number * factor))
+        return scaled if minimum <= scaled <= maximum else NATIVE_UNAVAILABLE
+
     def refresh(self) -> List[dict]:
         snapshot = self.backend.snapshot()
         with self.lock:
@@ -111,17 +147,10 @@ class NeePduOidManager(BaseOidManager):
         oids: List[Oid] = []
         system = snapshot.get("system", {})
         nms = snapshot.get("nms", {})
-        summary_state = self.state.data["summary"].get("1", {})
-        if not isinstance(summary_state, dict):
-            summary_state = {}
         source_id = _display(system.get("product_sn", "N/A"), 10)
         power_desc = _display(
-            summary_state.get(
-                "name", nms.get("system_name") or system.get("product_name")
-            ),
-            30,
+            nms.get("system_name") or system.get("product_name"), 30
         )
-
         event = self.state.data.get("last_event", {})
         if not isinstance(event, dict):
             event = {}
@@ -132,83 +161,417 @@ class NeePduOidManager(BaseOidManager):
             self._string(SYS_OID + ".4.0", event.get("sensor", "")),
             self._string(SYS_OID + ".5.0", event.get("status", "")),
             self._integer(SYS_OID + ".6.0", _stored_integer(
-                event, "load_value", -1, 65535)),
+                event, "value", -2147483648, 2147483647)),
             self._integer(SYS_OID + ".7.0", _stored_integer(
-                event, "load_low", -1, 65535)),
+                event, "low", -2147483648, 2147483647)),
             self._integer(SYS_OID + ".8.0", _stored_integer(
-                event, "load_high", -1, 65535)),
+                event, "high", -2147483648, 2147483647)),
         ])
+        oids.extend(self._build_native_device(snapshot))
+        oids.extend(self._build_native_inputs(snapshot))
+        oids.extend(self._build_native_outlets(snapshot))
+        oids.extend(self._build_native_sensors(snapshot))
+        oids.extend(self._build_communications(snapshot))
+        return oids
 
-        pdus = snapshot.get("pdus", [])
-        for pdu_index in range(1, MAX_PDUS + 1):
-            outlets = pdus[pdu_index - 1] if pdu_index <= len(pdus) else []
-            for outlet_index, outlet in enumerate(
-                    outlets[:MAX_OUTLETS], start=1):
-                state_key = f"{pdu_index}.{outlet_index}"
-                saved = self.state.data["outlets"].get(state_key, {})
-                if not isinstance(saved, dict):
-                    saved = {}
-                data = outlet.get("data") if isinstance(
-                    outlet.get("data"), dict
-                ) else {}
-                low = _stored_integer(saved, "low", -1, 255)
-                high = _stored_integer(saved, "high", -1, 255)
-                if "low" not in saved:
-                    low = _scaled(outlet.get("low_limit"), 10, 0, 255)
-                if "high" not in saved:
-                    high = _scaled(outlet.get("high_limit"), 10, 0, 255)
-                fuse = {
-                    1: "Normal",
-                    2: "Alarm",
-                    0: "Unknown",
-                    3: "Unavailable",
-                }.get(data.get("fuse"), "Unavailable")
-                on_value = outlet.get("on")
-                on_off = "ON" if on_value is True else (
-                    "OFF" if on_value is False else "Unknown"
-                )
-                values = (
-                    (1, OidType.INTEGER, outlet_index),
-                    (2, OidType.STRING, _display(
-                        outlet.get("number", outlet_index), 10)),
-                    (3, OidType.STRING, _display(
-                        saved.get("description", outlet.get("description", "")),
-                        30)),
-                    (4, OidType.STRING, _display(outlet.get("socket", ""), 30)),
-                    (5, OidType.STRING, fuse),
-                    (6, OidType.STRING, on_off),
-                    (7, OidType.INTEGER, _scaled(
-                        data.get("current"), 10, 0, 255)),
-                    (8, OidType.INTEGER, low),
-                    (9, OidType.INTEGER, high),
-                )
-                for column, oid_type, value in values:
-                    oids.append(self._oid(outlet_cell_oid(
-                        pdu_index, column, outlet_index
-                    ), oid_type, value))
-
-        summary_count = snapshot.get("summary_count")
-        if isinstance(summary_count, bool) or not isinstance(
-                summary_count, int):
-            summary_indexes = [
-                index for index, outlets in enumerate(
-                    pdus[:MAX_PDUS], start=1
-                ) if outlets
-            ]
-        else:
-            summary_indexes = range(
-                1, min(max(summary_count, 0), MAX_PDUS) + 1
+    def _build_native_device(self, snapshot: Dict[str, Any]) -> List[Oid]:
+        system = snapshot.get("system", {})
+        pdu = snapshot.get("pdu_info", {})
+        license_info = snapshot.get("license", {})
+        nms = snapshot.get("nms", {})
+        values = (
+            (1, OidType.STRING, system.get("product_name")),
+            (2, OidType.STRING, system.get("product_pn")),
+            (3, OidType.STRING, system.get("product_sn")),
+            (4, OidType.STRING, pdu.get("controller")),
+            (5, OidType.STRING, pdu.get("type")),
+            (6, OidType.INTEGER, self._native_scaled(
+                pdu.get("rated_current"), 10, 0)),
+            (7, OidType.INTEGER, self._native_scaled(
+                pdu.get("outlet_count"), 1, 0, MAX_OUTLETS)),
+            (8, OidType.STRING, license_info.get("type_id")),
+            (9, OidType.STRING, system.get("sw_version")),
+            (10, OidType.STRING, system.get("om_version")),
+            (11, OidType.STRING, system.get("pmb_version")),
+            (12, OidType.STRING, system.get("uptime")),
+            (13, OidType.STRING, system.get("lan_mac")),
+            (14, OidType.STRING, system.get("ip")),
+            (15, OidType.STRING, nms.get("system_name")),
+            (16, OidType.STRING, nms.get("system_contact")),
+            (17, OidType.STRING, nms.get("system_location")),
+        )
+        return [
+            self._oid(
+                f"{DEVICE_OID}.{column}.0", oid_type,
+                _display(value, 128) if oid_type == OidType.STRING else value,
             )
-        for pdu_index in summary_indexes:
-            oids.extend(self._build_summary(
-                snapshot, pdu_index, source_id, power_desc
+            for column, oid_type, value in values
+        ]
+
+    @staticmethod
+    def _input_topology(switches: Dict[str, Any]) -> Tuple[int, int, int]:
+        system_type = switches.get("sys_type")
+        phase_count = {0: 1, 1: 2, 2: 3, 3: 3}.get(system_type, 0)
+        input_count = {0: 1, 1: 2}.get(switches.get("branch"), 0)
+        return system_type, phase_count, input_count
+
+    def _build_native_inputs(self, snapshot: Dict[str, Any]) -> List[Oid]:
+        switches = snapshot.get("switches", {})
+        inputs = snapshot.get("inputs", [])
+        if not isinstance(switches, dict):
+            switches = {}
+        if not isinstance(inputs, list):
+            inputs = []
+        system_type, phase_count, input_count = self._input_topology(switches)
+        type_value = {0: 1, 1: 2, 2: 3, 3: 4}.get(system_type, 0)
+        neutral = self._truth(
+            True if system_type == 3 else
+            False if system_type in (0, 1, 2) else None
+        )
+        sensor_type = {0: 1, 1: 2}.get(switches.get("curr_type"), 0)
+        oids = [self._integer(INPUT_OID + ".3.0", input_count)]
+
+        for input_index in range(1, input_count + 1):
+            base = (input_index - 1) * 3
+            phase_rows = [
+                inputs[base + phase]
+                if base + phase < len(inputs)
+                and isinstance(inputs[base + phase], dict) else {}
+                for phase in range(phase_count)
+            ]
+            active_power = [
+                _finite_number(row.get("active_power")) for row in phase_rows
+            ]
+            active_power = [value for value in active_power if value is not None]
+            energy = [_finite_number(row.get("energy")) for row in phase_rows]
+            energy = [value for value in energy if value is not None]
+            input_values = (
+                (1, OidType.INTEGER, input_index),
+                (2, OidType.STRING, "Main" if input_index == 1 else "Auxiliary"),
+                (3, OidType.INTEGER, 1),
+                (4, OidType.INTEGER, type_value),
+                (5, OidType.INTEGER, phase_count),
+                (6, OidType.INTEGER, neutral),
+                (7, OidType.INTEGER, sensor_type),
+                (8, OidType.INTEGER, self._native_scaled(
+                    sum(active_power) if active_power else None, 10)),
+                (9, OidType.INTEGER, self._native_scaled(
+                    sum(energy) if energy else None, 10, 0)),
+            )
+            for column, oid_type, value in input_values:
+                oids.append(self._oid(
+                    input_cell_oid(column, input_index), oid_type, value
+                ))
+
+            for phase_index in range(1, phase_count + 1):
+                row = phase_rows[phase_index - 1]
+                phase_values = (
+                    (1, OidType.INTEGER, input_index),
+                    (2, OidType.INTEGER, phase_index),
+                    (3, OidType.STRING, f"L{phase_index}"),
+                    (4, OidType.INTEGER, self._native_scaled(
+                        row.get("voltage"), 10, 0)),
+                    (5, OidType.INTEGER, self._native_scaled(
+                        row.get("current"), 1000, 0)),
+                    (6, OidType.INTEGER, self._native_scaled(
+                        row.get("active_power"), 10)),
+                    (7, OidType.INTEGER, self._native_scaled(
+                        row.get("reactive_power"), 10)),
+                    (8, OidType.INTEGER, self._native_scaled(
+                        row.get("apparent_power"), 10, 0)),
+                    (9, OidType.INTEGER, self._native_scaled(
+                        row.get("power_factor"), 1000, -1000, 1000)),
+                    (10, OidType.INTEGER, self._native_scaled(
+                        row.get("phase"), 10, -3600, 3600)),
+                    (11, OidType.INTEGER, self._native_scaled(
+                        row.get("frequency"), 100, 0)),
+                    (12, OidType.INTEGER, self._native_scaled(
+                        row.get("energy"), 10, 0)),
+                )
+                for column, oid_type, value in phase_values:
+                    oids.append(self._oid(
+                        input_phase_cell_oid(
+                            column, input_index, phase_index
+                        ), oid_type, value
+                    ))
+        return oids
+
+    def _build_native_outlets(self, snapshot: Dict[str, Any]) -> List[Oid]:
+        pdus = snapshot.get("pdus", [])
+        outlets = pdus[0] if isinstance(pdus, list) and pdus else []
+        oids = []
+        for index, outlet in enumerate(outlets[:MAX_OUTLETS], start=1):
+            saved = self.state.data["outlets"].get(f"1.{index}", {})
+            saved = saved if isinstance(saved, dict) else {}
+            data = outlet.get("data")
+            data = data if isinstance(data, dict) else {}
+            fuse = data.get("fuse")
+            fuse = fuse if fuse in (0, 1, 2, 3) else 3
+            state = 1 if outlet.get("on") is True else (
+                2 if outlet.get("on") is False else 0
+            )
+            low = _stored_integer(saved, "low", -1, 255)
+            high = _stored_integer(saved, "high", -1, 255)
+            if "low" not in saved:
+                low = _scaled(outlet.get("low_limit"), 10, 0, 255)
+            if "high" not in saved:
+                high = _scaled(outlet.get("high_limit"), 10, 0, 255)
+            values = (
+                (1, OidType.INTEGER, index),
+                (2, OidType.STRING, _display(
+                    saved.get("description", outlet.get("description")), 30)),
+                (3, OidType.STRING, _display(outlet.get("socket"), 32)),
+                (4, OidType.INTEGER, fuse),
+                (5, OidType.INTEGER, state),
+                (6, OidType.INTEGER, self._native_scaled(
+                    data.get("voltage"), 10, 0)),
+                (7, OidType.INTEGER, self._native_scaled(
+                    data.get("current"), 1000, 0)),
+                (8, OidType.INTEGER, self._native_scaled(
+                    data.get("active_power"), 10)),
+                (9, OidType.INTEGER, self._native_scaled(
+                    data.get("reactive_power"), 10)),
+                (10, OidType.INTEGER, self._native_scaled(
+                    data.get("apparent_power"), 10, 0)),
+                (11, OidType.INTEGER, self._native_scaled(
+                    data.get("power_factor"), 1000, -1000, 1000)),
+                (12, OidType.INTEGER, self._native_scaled(
+                    data.get("phase"), 10, -3600, 3600)),
+                (13, OidType.INTEGER, self._native_scaled(
+                    data.get("frequency"), 100, 0)),
+                (14, OidType.INTEGER, self._native_scaled(
+                    data.get("energy"), 10, 0)),
+                (15, OidType.INTEGER, low),
+                (16, OidType.INTEGER, high),
+                (17, OidType.INTEGER, self._truth(
+                    outlet.get("relay_writable"))),
+                (18, OidType.INTEGER, self._truth(bool(data))),
+            )
+            for column, oid_type, value in values:
+                oids.append(self._oid(
+                    native_outlet_cell_oid(column, index), oid_type, value
+                ))
+        return oids
+
+    def _build_native_sensors(self, snapshot: Dict[str, Any]) -> List[Oid]:
+        oids = []
+        for index, sensor in enumerate(
+                snapshot.get("sensors", [])[:MAX_SENSORS], start=1):
+            saved = self.state.data["sensors"].get(str(index), {})
+            saved = saved if isinstance(saved, dict) else {}
+            temperature_low = _stored_integer(
+                saved, "temperature_low", -10000, 12000
+            )
+            temperature_high = _stored_integer(
+                saved, "temperature_high", -10000, 12000
+            )
+            humidity_low = _stored_integer(
+                saved, "humidity_low", -1, 1000
+            )
+            humidity_high = _stored_integer(
+                saved, "humidity_high", -1, 1000
+            )
+            values = (
+                (1, OidType.INTEGER, index),
+                (2, OidType.INTEGER, self._native_scaled(
+                    sensor.get("api_id"), 1, 0)),
+                (3, OidType.STRING, _display(sensor.get("mac"), 32)),
+                (4, OidType.STRING, _display(sensor.get("name"), 64)),
+                (5, OidType.STRING, _display(sensor.get("type"), 64)),
+                (6, OidType.STRING, _display(
+                    saved.get("location", sensor.get("location")), 30)),
+                (7, OidType.INTEGER, self._native_scaled(
+                    sensor.get("temperature"), 100, -10000, 12000)),
+                (8, OidType.INTEGER, temperature_low),
+                (9, OidType.INTEGER, temperature_high),
+                (10, OidType.INTEGER, self._native_scaled(
+                    sensor.get("humidity"), 10, 0, 1000)),
+                (11, OidType.INTEGER, humidity_low),
+                (12, OidType.INTEGER, humidity_high),
+                (13, OidType.INTEGER, self._native_scaled(
+                    sensor.get("rssi"), 1, -200, 0)),
+                (14, OidType.INTEGER, self._native_scaled(
+                    sensor.get("battery_mv"), 1, 0)),
+                (15, OidType.STRING, _display(
+                    sensor.get("data_datetime"), 40)),
+            )
+            for column, oid_type, value in values:
+                oids.append(self._oid(
+                    native_sensor_cell_oid(column, index), oid_type, value
+                ))
+        return oids
+
+    def _build_communications(self, snapshot: Dict[str, Any]) -> List[Oid]:
+        communication = snapshot.get("communications", {})
+        communication = communication if isinstance(communication, dict) else {}
+        network = communication.get("network", {})
+        network = network if isinstance(network, dict) else {}
+        params = network.get("params", {})
+        params = params if isinstance(params, dict) else {}
+        network_info = communication.get("network_info", {})
+        network_info = network_info if isinstance(network_info, dict) else {}
+        services = communication.get("services", {})
+        services = services if isinstance(services, dict) else {}
+        oids = []
+        network_mode = network.get("nw_mode")
+        if isinstance(network_mode, bool) or network_mode not in (-1, 0, 1, 2, 3):
+            network_mode = -1
+
+        network_values = (
+            (1, OidType.INTEGER, self._truth(network_info.get("connected"))),
+            (2, OidType.INTEGER, network_mode),
+            (3, OidType.INTEGER, self._truth(network.get("dhcp"))),
+            (4, OidType.STRING, network.get("eth_interface")),
+            (5, OidType.STRING, params.get("ip")),
+            (6, OidType.STRING, params.get("subnet_mask")),
+            (7, OidType.STRING, params.get("gateway_ip")),
+            (8, OidType.STRING, params.get("dns")),
+            (9, OidType.STRING, network.get("lan1_ip")),
+            (10, OidType.STRING, network.get("lan1_gateway")),
+            (11, OidType.STRING, network.get("lan2_ip")),
+            (12, OidType.STRING, network.get("lan2_gateway")),
+            (13, OidType.STRING, network.get("wifi_ip")),
+            (14, OidType.STRING, params.get("ssid")),
+            (15, OidType.STRING, network.get("ethernet_mac")),
+            (16, OidType.STRING, network.get("wifi_mac")),
+        )
+        for column, oid_type, value in network_values:
+            oids.append(self._oid(
+                f"{NETWORK_OID}.{column}.0", oid_type,
+                _display(value, 128) if oid_type == OidType.STRING else value,
             ))
 
-        # Environmental rows are emitted only for sensors supplied by the
-        # hardware/API provider; absent sensor types are not fabricated.
-        for sensor_index, sensor in enumerate(
-                snapshot.get("sensors", [])[:MAX_SENSORS], start=1):
-            oids.extend(self._build_sensor(sensor_index, sensor))
+        for column, key in enumerate(("ssh", "snmp", "modbus"), start=1):
+            oids.append(self._integer(
+                f"{SERVICE_OID}.{column}.0", self._truth(services.get(key))
+            ))
+
+        snmp = communication.get("snmp", {})
+        snmp = snmp if isinstance(snmp, dict) else {}
+        version = {"V1": 1, "V2c": 2, "V3": 3}.get(snmp.get("version"), 0)
+        security = {
+            "noAuthNoPriv": 1, "authNoPriv": 2, "authPriv": 3,
+        }.get(snmp.get("v3_security_level"), 0)
+        access = {"readOnly": 1, "readWrite": 2}.get(
+            snmp.get("v3_access_right"), 0
+        )
+        auth = {"MD5": 1, "SHA": 2}.get(snmp.get("v3_auth_algorithm"), 0)
+        privacy = {"DES": 1, "AES": 2}.get(
+            snmp.get("v3_privacy_algorithm"), 0
+        )
+        snmp_values = (
+            (1, OidType.INTEGER, self._truth(snmp.get("enabled"))),
+            (2, OidType.INTEGER, version),
+            (3, OidType.INTEGER, self._native_scaled(
+                snmp.get("port"), 1, 1, 65535)),
+            (4, OidType.INTEGER, self._truth(snmp.get("set_enabled"))),
+            (5, OidType.INTEGER, self._truth(snmp.get("traps_enabled"))),
+            (6, OidType.STRING, snmp.get("v3_user")),
+            (7, OidType.INTEGER, security),
+            (8, OidType.INTEGER, access),
+            (9, OidType.INTEGER, auth),
+            (10, OidType.INTEGER, privacy),
+            (11, OidType.INTEGER, self._truth(snmp.get("v3_configured"))),
+        )
+        for column, oid_type, value in snmp_values:
+            oids.append(self._oid(
+                f"{SNMP_CONFIG_OID}.{column}.0", oid_type,
+                _display(value, 64) if oid_type == OidType.STRING else value,
+            ))
+        managers = snmp.get("trap_managers", [])
+        managers = managers if isinstance(managers, list) else []
+        for index in range(1, 5):
+            manager = managers[index - 1] if index <= len(managers) else {}
+            manager = manager if isinstance(manager, dict) else {}
+            for column, oid_type, value in (
+                (1, OidType.INTEGER, index),
+                (2, OidType.STRING, _display(manager.get("name"), 64)),
+                (3, OidType.STRING, _display(manager.get("address"), 253)),
+            ):
+                oids.append(self._oid(
+                    trap_manager_cell_oid(column, index), oid_type, value
+                ))
+
+        modbus = communication.get("modbus", {})
+        modbus = modbus if isinstance(modbus, dict) else {}
+        modbus_values = (
+            (1, self._truth(services.get("modbus"))),
+            (2, self._native_scaled(modbus.get("addr"), 1, 0, 247)),
+            (3, 502),
+            (4, 115200),
+            (5, 1),  # none
+            (6, 8),
+            (7, 1),
+        )
+        for column, value in modbus_values:
+            oids.append(self._integer(f"{MODBUS_OID}.{column}.0", value))
+
+        ntp = communication.get("ntp", {})
+        ntp = ntp if isinstance(ntp, dict) else {}
+        ntp_values = (
+            (1, OidType.INTEGER, self._truth(ntp.get("enabled"))),
+            (2, OidType.STRING, ntp.get("server")),
+            (3, OidType.INTEGER, self._native_scaled(
+                ntp.get("time_offset"), 1, -12, 12)),
+            (4, OidType.INTEGER, self._truth(ntp.get("running"))),
+            (5, OidType.INTEGER, self._truth(ntp.get("synchronized"))),
+        )
+        for column, oid_type, value in ntp_values:
+            oids.append(self._oid(
+                f"{NTP_OID}.{column}.0", oid_type,
+                _display(value, 253) if oid_type == OidType.STRING else value,
+            ))
+
+        email = communication.get("email_web", {})
+        email = email if isinstance(email, dict) else {}
+        web_protocol = {"http": 1, "https": 2}.get(
+            email.get("web_protocol"), 0
+        )
+        smtp_auth = {"none": 1, "login": 2}.get(email.get("smtp_auth"), 0)
+        email_values = (
+            (1, OidType.INTEGER, web_protocol),
+            (2, OidType.INTEGER, self._native_scaled(
+                email.get("web_port"), 1, 1, 65535)),
+            (3, OidType.STRING, email.get("smtp_server")),
+            (4, OidType.INTEGER, self._native_scaled(
+                email.get("smtp_port"), 1, 1, 65535)),
+            (5, OidType.INTEGER, smtp_auth),
+            (6, OidType.STRING, email.get("from_address")),
+            (7, OidType.INTEGER, self._truth(
+                email.get("password_configured"))),
+        )
+        for column, oid_type, value in email_values:
+            oids.append(self._oid(
+                f"{WEB_EMAIL_OID}.{column}.0", oid_type,
+                _display(value, 254) if oid_type == OidType.STRING else value,
+            ))
+        recipients = email.get("recipients", [])
+        recipients = recipients if isinstance(recipients, list) else []
+        for index, recipient in enumerate(recipients[:3], start=1):
+            oids.extend([
+                self._integer(email_recipient_cell_oid(1, index), index),
+                self._string(
+                    email_recipient_cell_oid(2, index), recipient, 254
+                ),
+            ])
+
+        bluetooth = communication.get("bluetooth", {})
+        bluetooth = bluetooth if isinstance(bluetooth, dict) else {}
+        bluetooth_values = (
+            (1, OidType.STRING, bluetooth.get("controller_mac")),
+            (2, OidType.STRING, bluetooth.get("name")),
+            (3, OidType.INTEGER, self._truth(bluetooth.get("powered"))),
+            (4, OidType.INTEGER, self._truth(bluetooth.get("pairable"))),
+            (5, OidType.INTEGER, self._truth(bluetooth.get("discoverable"))),
+            (6, OidType.INTEGER, self._truth(bluetooth.get("discovering"))),
+            (7, OidType.INTEGER, self._native_scaled(
+                bluetooth.get("device_count"), 1, 0)),
+        )
+        for column, oid_type, value in bluetooth_values:
+            oids.append(self._oid(
+                f"{BLUETOOTH_OID}.{column}.0", oid_type,
+                _display(value, 64) if oid_type == OidType.STRING else value,
+            ))
         return oids
 
     def _build_summary(self, snapshot: Dict[str, Any], pdu_index: int,
@@ -412,11 +775,63 @@ class NeePduOidManager(BaseOidManager):
     def set(self, oid: Oid, value_type: str, value: str) -> str:
         with self.lock:
             path = oid.oid
-            if path.startswith(POWER_OID + "."):
-                return self._set_power(path, value_type, value)
-            if path.startswith(SENSOR_OID + "."):
-                return self._set_sensor(path, value_type, value)
+            if path.startswith(NATIVE_OUTLET_OID + "."):
+                return self._set_native_outlet(
+                    path, value_type, value
+                )
+            if path.startswith(NATIVE_SENSOR_OID + "."):
+                return self._set_native_sensor(
+                    path, value_type, value
+                )
             return SnmpSetError.NOT_WRITABLE
+
+    def _set_native_outlet(self, path: str, value_type: str,
+                           value: str) -> str:
+        suffix = path[len(NATIVE_OUTLET_OID) + 1:].split(".")
+        if len(suffix) != 2:
+            return SnmpSetError.NOT_WRITABLE
+        try:
+            column, index = int(suffix[0]), int(suffix[1])
+        except ValueError:
+            return SnmpSetError.NOT_WRITABLE
+        if column == 2:
+            return self._set_outlet(1, 3, index, value_type, value)
+        if column == 5:
+            if value_type.lower() != str(OidType.INTEGER):
+                return SnmpSetError.WRONG_TYPE
+            state = {1: "ON", 2: "OFF"}.get(
+                self._parse_integer(value, 1, 2)
+            )
+            if state is None:
+                return SnmpSetError.WRONG_VALUE
+            return self._set_outlet(
+                1, 6, index, str(OidType.STRING), state
+            )
+        if column in (15, 16):
+            return self._set_outlet(
+                1, 8 if column == 15 else 9,
+                index, value_type, value,
+            )
+        return SnmpSetError.NOT_WRITABLE
+
+    def _set_native_sensor(self, path: str, value_type: str,
+                           value: str) -> str:
+        suffix = path[len(NATIVE_SENSOR_OID) + 1:].split(".")
+        if len(suffix) != 2:
+            return SnmpSetError.NOT_WRITABLE
+        try:
+            column, index = int(suffix[0]), int(suffix[1])
+        except ValueError:
+            return SnmpSetError.NOT_WRITABLE
+        if column == 6:
+            return self._set_sensor(
+                sensor_cell_oid(5, index), value_type, value
+            )
+        if column in (8, 9, 11, 12):
+            return self._set_sensor(
+                sensor_cell_oid(column, index), value_type, value
+            )
+        return SnmpSetError.NOT_WRITABLE
 
     def _set_power(self, path: str, value_type: str, value: str) -> str:
         suffix = path[len(POWER_OID) + 1:].split(".")
@@ -605,8 +1020,8 @@ class NeePduOidManager(BaseOidManager):
         return "normal"
 
     def _identity(self) -> Dict[str, str]:
-        power_desc = self.get(Oid(SYS_OID + ".2.0"))
-        source_id = self.get(Oid(SYS_OID + ".1.0"))
+        power_desc = self.get(Oid(DEVICE_OID + ".15.0"))
+        source_id = self.get(Oid(DEVICE_OID + ".3.0"))
         return {
             "power_desc": power_desc.value if power_desc else "",
             "source_id": source_id.value if source_id else "",
@@ -690,7 +1105,7 @@ class NeePduOidManager(BaseOidManager):
             )
             for metric in SENSOR_METRICS:
                 value = _scaled(
-                    sensor.get(metric.key), 1,
+                    sensor.get(metric.key), metric.factor,
                     metric.value_minimum, metric.value_maximum
                 )
                 low_key = metric.key + "_low"
@@ -733,28 +1148,6 @@ class NeePduOidManager(BaseOidManager):
                     **identity,
                 })
 
-            alarm = sensor.get("alarm")
-            environment_status = (
-                "alarm" if alarm is True else
-                "normal" if alarm is False else
-                "unavailable"
-            )
-            candidates.append({
-                "key": f"sensor.{sensor_index}.environment",
-                "status": environment_status,
-                "active": ("alarm",),
-                "notification_oid": notification_oid(6),
-                "source": "",
-                "sensor": sensor_desc,
-                "sensor_index": sensor_index,
-                "value": UNAVAILABLE,
-                "low": UNAVAILABLE,
-                "high": UNAVAILABLE,
-                "load_value": UNAVAILABLE,
-                "load_low": UNAVAILABLE,
-                "load_high": UNAVAILABLE,
-                **identity,
-            })
         return candidates
 
     def _prime_alarm_state(self, candidates: List[dict]) -> None:
