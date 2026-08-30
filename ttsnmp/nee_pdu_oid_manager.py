@@ -46,8 +46,9 @@ from .nee_mib_schema import (
 )
 from .node_table_oid_manager import SnmpSetError
 from .oid import Oid, OidType
-from .pdu_backend import PduApiError, PduBackend
+from .pdu_api_error import PduApiError
 from .persistent_mib_state import PersistentMibState
+from .volatile_snapshot import VolatileSnapshot
 from .mib_values import (
     display_string as _display,
     finite_number as _finite_number,
@@ -64,14 +65,16 @@ _MISSING = object()
 class NeePduOidManager(BaseOidManager):
     """Thread-safe OID view backed by the local PDU REST API."""
 
-    def __init__(self, backend: PduBackend, state_file: str):
+    def __init__(self, backend: Any, state_file: str,
+                 snapshot_file: str = ""):
         self.backend = backend
         self.state = PersistentMibState(state_file)
+        self.snapshot_store = VolatileSnapshot(snapshot_file)
         self.lock = threading.RLock()
         self.oids: List[Oid] = []
         self._oid_by_key: Dict[Tuple[int, ...], Oid] = {}
         self._oid_keys: List[Tuple[int, ...]] = []
-        self.snapshot: Dict[str, Any] = {}
+        self.snapshot: Dict[str, Any] = self.snapshot_store.load()
         self.pending_traps: List[dict] = []
         # Net-SNMP starts pass_persist helpers on the first enterprise
         # request. Expose a structurally valid tree immediately so that the
@@ -145,6 +148,10 @@ class NeePduOidManager(BaseOidManager):
             self.pending_traps = self._detect_traps(old_snapshot, snapshot)
             if self.pending_traps:
                 self._replace_oids(self._build_oids(snapshot))
+            try:
+                self.snapshot_store.save(snapshot)
+            except (OSError, TypeError, ValueError):
+                logger.exception("Could not cache live SNMP snapshot")
             return list(self.pending_traps)
 
     def _build_oids(self, snapshot: Dict[str, Any]) -> List[Oid]:
@@ -829,7 +836,7 @@ class NeePduOidManager(BaseOidManager):
             return SnmpSetError.NOT_WRITABLE
         if column == 6:
             return self._set_sensor(
-                sensor_cell_oid(5, index), value_type, value
+                sensor_cell_oid(6, index), value_type, value
             )
         if column in (8, 9, 11, 12):
             return self._set_sensor(
@@ -967,7 +974,7 @@ class NeePduOidManager(BaseOidManager):
         if not isinstance(state, dict):
             state = {}
             self.state.data["sensors"][str(index)] = state
-        if column == 5:
+        if column == 6:
             if value_type.lower() != str(OidType.STRING):
                 return SnmpSetError.WRONG_TYPE
             if not _valid_display(value, 30):

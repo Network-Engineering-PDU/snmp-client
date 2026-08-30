@@ -1,0 +1,6 @@
+#!/usr/bin/python3
+from ttsnmp import ne_snmpd_helper
+
+
+if __name__ == "__main__":
+    ne_snmpd_helper()

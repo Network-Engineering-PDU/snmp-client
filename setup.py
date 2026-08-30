@@ -11,7 +11,7 @@ setuptools.setup(
     description="TycheTools NetSNMP pass_persist helper",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://bitbucket.org/tychetools/snmp-client/src/master/",
+    url="https://github.com/Network-Engineering-PDU/snmp-client",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -23,8 +23,7 @@ setuptools.setup(
     entry_points={
         "console_scripts": {
             "ttsnmpd_helper = ttsnmp.__init__:snmpd_helper",
-            "nesnmpd_helper = ttsnmp.__init__:ne_snmpd_helper",
         }
     },
-    scripts=[]
+    scripts=["scripts/nesnmpd_helper"]
 )

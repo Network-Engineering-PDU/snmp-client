@@ -43,7 +43,7 @@ OUTLET_WRITABLE_COLUMNS = frozenset((3, 6, 8, 9))
 SUMMARY_STRING_COLUMNS = frozenset((2, 3, 4, 5))
 SUMMARY_WRITABLE_COLUMNS = frozenset((3, 6, 8, 9, 11, 12, 14, 15))
 SENSOR_STRING_COLUMNS = frozenset((2, 3, 4, 5, 6))
-SENSOR_WRITABLE_COLUMNS = frozenset((5, 8, 9, 11, 12, 14, 15))
+SENSOR_WRITABLE_COLUMNS = frozenset((6, 8, 9, 11, 12))
 
 
 class LimitColumn(NamedTuple):

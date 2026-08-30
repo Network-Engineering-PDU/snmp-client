@@ -12,12 +12,10 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from .pdu_api_error import PduApiError
+
 
 logger = logging.getLogger(__name__)
-
-
-class PduApiError(RuntimeError):
-    pass
 
 
 class PduBackend:

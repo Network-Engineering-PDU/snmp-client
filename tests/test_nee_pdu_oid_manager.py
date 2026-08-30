@@ -158,6 +158,26 @@ class NeePduOidManagerTest(unittest.TestCase):
         self.assertEqual("", product_name.value)
         self.assertIsNotNone(cold_manager.get_next_oid(Oid(BASE_OID)))
 
+    def test_cached_snapshot_is_available_to_replacement_helper(self):
+        snapshot_path = self.state_path + ".snapshot"
+        first = NeePduOidManager(
+            self.backend, self.state_path + ".first", snapshot_path
+        )
+        first.refresh()
+
+        replacement = NeePduOidManager(
+            mock.Mock(), self.state_path + ".replacement", snapshot_path
+        )
+
+        self.assertEqual(
+            "NET-POWER",
+            replacement.get(Oid(DEVICE_OID + ".1.0")).value,
+        )
+        self.assertEqual(
+            "3351",
+            replacement.get(Oid(NATIVE_SENSOR_OID + ".7.1")).value,
+        )
+
     def test_device_identity_and_scaling(self):
         self.assertEqual("NET-POWER", self.value(DEVICE_OID + ".1.0"))
         self.assertEqual("ABCDEF1234", self.value(DEVICE_OID + ".3.0"))
@@ -203,6 +223,8 @@ class NeePduOidManagerTest(unittest.TestCase):
         for column, value in expected.items():
             self.assertEqual(value, self.value(
                 f"{NATIVE_SENSOR_OID}.{column}.1"))
+        self.assertEqual(SnmpSetError.NOT_WRITABLE, self.manager.set(
+            Oid(NATIVE_SENSOR_OID + ".5.1"), "string", "Wrong column"))
         for column, value in ((6, "Cold aisle"), (8, "1000"),
                               (9, "4000"), (11, "200"), (12, "800")):
             value_type = "string" if column == 6 else "integer"
