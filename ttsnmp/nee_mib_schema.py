@@ -7,7 +7,7 @@ detector, and tests from growing independent copies of the same column rules.
 from typing import NamedTuple, Tuple
 
 
-BASE_OID = ".1.3.6.1.4.1.2000.1"
+BASE_OID = ".1.3.6.1.4.1.66547.1"
 DEVICE_OID = BASE_OID + ".1"
 INPUT_OID = BASE_OID + ".2"
 INPUT_ENTRY_OID = INPUT_OID + ".1.1"

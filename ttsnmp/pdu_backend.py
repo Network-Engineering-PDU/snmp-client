@@ -178,8 +178,20 @@ class PduBackend:
         if not isinstance(license_info, dict):
             license_info = {"type_id": "A1"}
         license_type = license_info.get("type_id")
-        metering_available = license_type in ("A2", "B2")
-        relay_available = license_type in ("B1", "B2")
+        metering_available = bool(license_info.get(
+            "outlet_metering_licensed",
+            license_type in ("A2", "B2"),
+        ))
+        relay_available = bool(license_info.get(
+            "outlet_switch_licensed",
+            license_type in ("B1", "B2"),
+        ))
+        license_info = dict(license_info)
+        license_info["wifi_licensed"] = bool(
+            license_info.get("wifi_licensed", False)
+        )
+        license_info["outlet_switch_licensed"] = relay_available
+        license_info["outlet_metering_licensed"] = metering_available
         nms = self._optional_get("settings/snmp-nms", {})
         # Input topology is part of the PDU identity and is useful even on a
         # licence that does not expose electrical metering.

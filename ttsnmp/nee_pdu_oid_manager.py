@@ -210,6 +210,12 @@ class NeePduOidManager(BaseOidManager):
             (15, OidType.STRING, nms.get("system_name")),
             (16, OidType.STRING, nms.get("system_contact")),
             (17, OidType.STRING, nms.get("system_location")),
+            (18, OidType.INTEGER, self._truth(
+                license_info.get("wifi_licensed"))),
+            (19, OidType.INTEGER, self._truth(
+                license_info.get("outlet_switch_licensed"))),
+            (20, OidType.INTEGER, self._truth(
+                license_info.get("outlet_metering_licensed"))),
         )
         return [
             self._oid(

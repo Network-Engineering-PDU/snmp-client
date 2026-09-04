@@ -27,7 +27,12 @@ def make_snapshot():
         },
         "pdu_info": {"outlet_count": 1, "type": "SMART_PDU",
                      "controller": "VAR-SOM-MX7", "rated_current": 32.0},
-        "license": {"type_id": "B2"},
+        "license": {
+            "type_id": "B2",
+            "wifi_licensed": True,
+            "outlet_switch_licensed": True,
+            "outlet_metering_licensed": True,
+        },
         "nms": {"system_name": "Rack PDU",
                 "system_contact": "noc@example.com",
                 "system_location": "Rack A"},
@@ -142,6 +147,7 @@ class NeePduOidManagerTest(unittest.TestCase):
         return result.value
 
     def test_product_groups_start_at_one_and_are_contiguous(self):
+        self.assertEqual(".1.3.6.1.4.1.66547.1", BASE_OID)
         self.assertEqual(BASE_OID + ".1", DEVICE_OID)
         self.assertEqual(BASE_OID + ".2", INPUT_OID)
         self.assertEqual(BASE_OID + ".3.1.1", NATIVE_OUTLET_OID)
@@ -184,6 +190,9 @@ class NeePduOidManagerTest(unittest.TestCase):
         self.assertEqual("VAR-SOM-MX7", self.value(DEVICE_OID + ".4.0"))
         self.assertEqual("320", self.value(DEVICE_OID + ".6.0"))
         self.assertEqual("Rack A", self.value(DEVICE_OID + ".17.0"))
+        self.assertEqual("1", self.value(DEVICE_OID + ".18.0"))
+        self.assertEqual("1", self.value(DEVICE_OID + ".19.0"))
+        self.assertEqual("1", self.value(DEVICE_OID + ".20.0"))
 
     def test_two_input_three_phase_topology_and_measurements(self):
         self.backend.data["switches"]["branch"] = 1

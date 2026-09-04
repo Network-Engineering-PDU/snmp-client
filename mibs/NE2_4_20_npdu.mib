@@ -6,10 +6,10 @@ IMPORTS
     DisplayString
         FROM SNMPv2-TC;
 
-neE OBJECT IDENTIFIER ::= { enterprises 2000 }
+neE OBJECT IDENTIFIER ::= { enterprises 66547 }
 
 nee MODULE-IDENTITY
-    LAST-UPDATED "202608290000Z"
+    LAST-UPDATED "202609030000Z"
     ORGANIZATION "Network Engineering"
     CONTACT-INFO "PDU Engineering"
     DESCRIPTION
@@ -19,6 +19,11 @@ nee MODULE-IDENTITY
          of -2147483648 means that the value is unavailable unless an object
          description specifies another unavailable value.  Authentication
          passwords and SNMP community strings are intentionally excluded."
+    REVISION "202609030000Z"
+    DESCRIPTION
+        "Use the Network Engineering enterprise number 66547 and expose
+         whole-PDU Wi-Fi, outlet switching, and outlet metering licence
+         capabilities."
     REVISION "202608290000Z"
     DESCRIPTION
         "NET-POWER PDU v2.4.20 definition: device identity, two power
@@ -154,6 +159,33 @@ npSystemLocation OBJECT-TYPE
     STATUS current
     DESCRIPTION "Configured NMS location."
     ::= { npDevice 17 }
+
+npWifiLicensed OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Whether Wi-Fi is licensed for the whole PDU. This is independent
+         of the outlet feature licence and does not indicate link state."
+    ::= { npDevice 18 }
+
+npOutletSwitchLicensed OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Whether outlet switching and remote ON/OFF control are licensed
+         for the whole PDU."
+    ::= { npDevice 19 }
+
+npOutletMeteringLicensed OBJECT-TYPE
+    SYNTAX INTEGER { unknown(0), true(1), false(2) }
+    MAX-ACCESS read-only
+    STATUS current
+    DESCRIPTION
+        "Whether outlet electrical measurement is licensed for the whole
+         PDU."
+    ::= { npDevice 20 }
 
 -- Power inputs -------------------------------------------------------------
 

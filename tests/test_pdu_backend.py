@@ -6,7 +6,8 @@ from ttsnmp.pdu_backend import PduApiError, PduBackend
 
 class PduBackendTest(unittest.TestCase):
 
-    def backend_with(self, license_type="A2", outlet_count=0):
+    def backend_with(self, license_type="A2", outlet_count=0,
+                     wifi_licensed=False):
         backend = PduBackend()
         responses = {
             "settings/system-info": {
@@ -18,7 +19,10 @@ class PduBackendTest(unittest.TestCase):
                 "outlet_count": outlet_count,
                 "type": "SMART_PDU",
             },
-            "settings/license": {"type_id": license_type},
+            "settings/license": {
+                "type_id": license_type,
+                "wifi_licensed": wifi_licensed,
+            },
             "settings/snmp-nms": {},
             "inputs/switches": {"branch": 0, "sys_type": 0},
             "network/snmp/detailed-settings": {},
@@ -155,6 +159,18 @@ class PduBackendTest(unittest.TestCase):
         self.assertIsNone(outlet["data"])
         self.assertTrue(outlet["on"])
         self.assertTrue(outlet["relay_writable"])
+
+    def test_license_capabilities_are_normalized_for_whole_pdu(self):
+        snapshot = self.backend_with(
+            license_type="B2", wifi_licensed=True
+        ).snapshot()
+
+        self.assertEqual({
+            "type_id": "B2",
+            "wifi_licensed": True,
+            "outlet_switch_licensed": True,
+            "outlet_metering_licensed": True,
+        }, snapshot["license"])
 
     def test_subscribed_sensor_maps_to_environment_table_data(self):
         backend = self.backend_with(license_type="A1")

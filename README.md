@@ -100,7 +100,7 @@ Some example commands:
 ## Network Engineering PDU mode
 
 The `nesnmpd_helper` entry point implements `NE2_4_20_npdu.mib` below
-`.1.3.6.1.4.1.2000.1`. Net-SNMP owns UDP communication and translates
+`.1.3.6.1.4.1.66547.1`. Net-SNMP owns UDP communication and translates
 GETBULK requests into the GETNEXT operations handled by the persistent helper.
 
 The product tree starts at branch `.1` and contains only NET-POWER-backed data:
@@ -116,9 +116,12 @@ Measured integers use `-2147483648` when the API, installed hardware or
 licence does not supply a value. Outlet and sensor rows exist only for hardware
 reported by the controller.
 
-Licence capabilities affect values and write behavior. A1 exposes topology and
-identity, A2 adds metering, B1 adds relay state/control, and B2 adds both.
-Relay SET requests on a non-relay licence return `inconsistent-value`.
+Licence capabilities affect values and write behavior. Wi-Fi is a separate
+whole-PDU flag in the signed licence. For outlet features, A1 exposes topology
+and identity, A2 adds metering, B1 adds relay state/control, and B2 adds both.
+The three capabilities are reported by `npWifiLicensed.0`,
+`npOutletSwitchLicensed.0`, and `npOutletMeteringLicensed.0`. Relay SET
+requests on a non-relay licence return `inconsistent-value`.
 
 Writable MIB values:
 
@@ -140,10 +143,10 @@ are loaded from the NE API settings when SNMP starts.
 Numeric examples:
 
 ```console
-snmpget -v2c -c public HOST .1.3.6.1.4.1.2000.1.1.1.0
-snmpwalk -v2c -c public HOST .1.3.6.1.4.1.2000.1
-snmpbulkget -v2c -c public -Cn0 -Cr20 HOST .1.3.6.1.4.1.2000.1.2
-snmpset -v2c -c private HOST .1.3.6.1.4.1.2000.1.3.1.1.5.1 i 2
+snmpget -v2c -c public HOST .1.3.6.1.4.1.66547.1.1.1.0
+snmpwalk -v2c -c public HOST .1.3.6.1.4.1.66547.1
+snmpbulkget -v2c -c public -Cn0 -Cr20 HOST .1.3.6.1.4.1.66547.1.2
+snmpset -v2c -c private HOST .1.3.6.1.4.1.66547.1.3.1.1.5.1 i 2
 ```
 
 Examples using the v2.4.20 MIB:
